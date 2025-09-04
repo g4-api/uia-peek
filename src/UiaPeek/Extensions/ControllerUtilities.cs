@@ -15,7 +15,7 @@ namespace UiaPeek.Extensions
         /// Writes the G4™ UiaPeek ASCII logo to the console, including the specified version number.
         /// </summary>
         /// <param name="version">The version number to display in the logo.</param>
-        public static void WriteHubAsciiLogo(string version)
+        public static void WriteAsciiLogo(string version)
         {
             // Define the ASCII art logo with placeholders for version information.
             var logo = new string[]

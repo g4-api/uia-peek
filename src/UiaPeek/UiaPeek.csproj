@@ -2,6 +2,7 @@
 
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
+		<NoWarn>$(NoWarn);SYSLIB1045</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -18,7 +19,9 @@
 
 	<ItemGroup>
 		<PackageReference Include="CommandBridge" Version="2025.2.26.62" />
+		<PackageReference Include="G4.Extensions" Version="2025.8.11.43" />
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="9.0.4" />
+		<PackageReference Include="Swashbuckle.AspNetCore.Annotations" Version="9.0.4" />
 	</ItemGroup>
 
 </Project>

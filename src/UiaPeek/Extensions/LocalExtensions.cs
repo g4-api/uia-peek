@@ -107,7 +107,6 @@ namespace UiaPeek.Extensions
             var controlTypeId = Safe(() => element.CurrentControlType);
             var name = Safe(() => element.CurrentName);
             var pid = Safe(() => element.CurrentProcessId);
-            var rectangle = Safe(() => element.CurrentBoundingRectangle);
 
             // Resolve the control type name using the cache, defaulting to "*"
             var controlType = Cache.ControlTypeNames.GetValueOrDefault(
@@ -115,8 +114,19 @@ namespace UiaPeek.Extensions
                 defaultValue: "*"
             );
 
-            // Extract supported patterns (if any)
-            var patterns = GetPatterns(element);
+            // If only metadata is requested, return a simplified model
+            if (metadata)
+            {
+                return new UiaNodeModel
+                {
+                    AutomationId = string.IsNullOrWhiteSpace(automationId) ? null : automationId,
+                    ClassName = string.IsNullOrWhiteSpace(className) ? null : className,
+                    ControlType = string.IsNullOrWhiteSpace(controlType) ? null : controlType,
+                    ControlTypeId = controlTypeId,
+                    Name = string.IsNullOrWhiteSpace(name) ? null : name,
+                    ProcessId = pid
+                };
+            }
 
             // Initialize runtimeId to an empty array
             int[] runtimeId = [];
@@ -131,18 +141,18 @@ namespace UiaPeek.Extensions
                 // Ignore errors when retrieving runtime ID
             }
 
-            // If only metadata is requested, return a simplified model
-            if (metadata)
+            // Extract the element bounding rectangle
+            var rectangle = Safe(() => element.CurrentBoundingRectangle);
+
+            // Extract supported patterns (if any)
+            var patterns = GetPatterns(element);
+
+            // Extract mchine information
+            var machine = new UiaNodeModel.MachineDataModel
             {
-                return new UiaNodeModel
-                {
-                    AutomationId = string.IsNullOrWhiteSpace(automationId) ? null : automationId,
-                    ClassName = string.IsNullOrWhiteSpace(className) ? null : className,
-                    ControlType = string.IsNullOrWhiteSpace(controlType) ? null : controlType,
-                    Name = string.IsNullOrWhiteSpace(name) ? null : name,
-                    ProcessId = pid
-                };
-            }
+                Name = Environment.MachineName,
+                PublicAddress = ControllerUtilities.GetLocalEndpoint()
+            };
 
             // Build and return the node model
             return new UiaNodeModel
@@ -157,6 +167,7 @@ namespace UiaPeek.Extensions
                 },
                 ClassName = string.IsNullOrWhiteSpace(className) ? null : className,
                 ControlType = string.IsNullOrWhiteSpace(controlType) ? null : controlType,
+                ControlTypeId = controlTypeId,
                 Name = string.IsNullOrWhiteSpace(name) ? null : name,
                 Patterns = [.. patterns],
                 ProcessId = pid,

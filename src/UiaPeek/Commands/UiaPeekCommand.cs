@@ -41,6 +41,7 @@ namespace UiaPeek.Commands
         private static readonly JsonSerializerOptions s_jsonOptions = new()
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             WriteIndented = false
         };
 
