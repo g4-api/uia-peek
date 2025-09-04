@@ -3,19 +3,30 @@
 namespace UiaPeek.Models
 {
     /// <summary>
-    /// Represents a chain of UI Automation nodes, from a given element up to its top window.
+    /// Represents a chain of UI Automation nodes, starting from a trigger element
+    /// and climbing upward through its ancestors until the top window.
     /// </summary>
     public class UiaChainModel
     {
         /// <summary>
-        /// The ordered path of nodes, starting from the original element
-        /// and moving upward through its ancestors until the top window.
+        /// Gets or sets a locator string for the trigger element.
+        /// </summary>
+        public string Locator { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The ordered sequence of nodes, beginning with the trigger element
+        /// and continuing upward through its parent elements.
         /// </summary>
         public List<UiaNodeModel> Path { get; set; } = [];
 
         /// <summary>
-        /// The top-level window node in the chain.
-        /// This is the ancestor closest to the desktop root.
+        /// The screen coordinates of the trigger element (the last element in the chain).
+        /// </summary>
+        public UiaPointModel Point { get; set; } = null;
+
+        /// <summary>
+        /// The top-level window node in the chain,
+        /// representing the ancestor closest to the desktop root.
         /// </summary>
         public UiaNodeModel TopWindow { get; set; } = null;
     }

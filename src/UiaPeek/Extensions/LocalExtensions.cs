@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 
 using UiaPeek.Models;
 
@@ -54,10 +56,21 @@ namespace UiaPeek.Extensions
             // The starting element includes full details; ancestors only include metadata.
             var metadataOnly = false;
 
+            // Tracks whether we are processing the first (starting) element.
+            var isFirst = true;
+
             while (current != null)
             {
                 // Convert the current element to a node model and add it to the chain.
-                nodes.Add(Convert(current, metadataOnly));
+                var node = Convert(current, metadataOnly);
+                nodes.Add(node);
+
+                // Mark the first element as the trigger element.
+                if (isFirst)
+                {
+                    node.IsTriggerElement = true;
+                    isFirst = false;
+                }
 
                 // Attempt to retrieve the parent element, handling COM issues safely.
                 var parent = Safe(() => walker.GetParentElement(current), fallback: null);
@@ -88,14 +101,113 @@ namespace UiaPeek.Extensions
                 current = parent;
             }
 
+            // Reverse the collected nodes to have the trigger element last.
             nodes.Reverse();
+
+            // Mark the top-level window in the chain.
+            var topWindow = nodes.FirstOrDefault();
+
+            // The top window is the first node in the reversed list.
+            if (topWindow != null)
+            {
+                topWindow.IsTopWindow = true;
+            }
 
             // Return the structured chain model.
             return new UiaChainModel
             {
                 Path = nodes,
-                TopWindow = nodes.FirstOrDefault()
+                TopWindow = topWindow
             };
+        }
+
+        /// <summary>
+        /// Builds a UIA XPath-like locator string from a <see cref="UiaChainModel"/>.
+        /// </summary>
+        /// <param name="chain">The chain containing the ordered UIA nodes (trigger → ancestors).</param>
+        /// <returns>A locator string beginning with <c>/Desktop</c> that walks the chain using <c>/</c> for contiguous ancestors and <c>//</c> when gaps are present.</returns>
+        public static string ResolveLocator(this UiaChainModel chain)
+        {
+            // Local helper: identifiers are considered "broken" if they contain quotes (not safely embeddable).
+            static bool IsBroken(string input)
+                => input.Contains('\'') || input.Contains('"');
+
+            // Use empty list if Path is null to avoid NRE; extension method assumes 'chain' itself is not null.
+            var nodes = chain.Path ?? [];
+
+            // Base of the locator always starts at Desktop.
+            var xpathBuilder = new StringBuilder("/Desktop");
+
+            // Tracks whether we skipped one or more intermediate nodes (causing '//' separator).
+            var isGap = false;
+
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                // Current node and whether it's the last in the chain.
+                var node = nodes[i];
+                var isLast = (i == nodes.Count - 1);
+
+                // Control type (fallback to '*' when unknown).
+                var control = node.ControlType ?? "*";
+
+                // Candidate identifiers.
+                var name = node.Name;
+                var automationId = node.AutomationId;
+
+                // Determine presence and validity of identifiers.
+                var hasName = !string.IsNullOrEmpty(name);
+                var hasAutomationId = !string.IsNullOrEmpty(automationId);
+
+                // Check if identifiers are "broken" (contain quotes).
+                var nameBroken = hasName && IsBroken(name);
+                var autoBroken = hasAutomationId && IsBroken(automationId);
+
+                // LAST node with no identifiers -> emit //ControlType and finish.
+                if (isLast && !hasName && !hasAutomationId)
+                {
+                    xpathBuilder.Append("//").Append(control);
+                    break;
+                }
+
+                // Intermediate node with no identifiers -> skip and mark gap.
+                if (!isLast && !hasName && !hasAutomationId)
+                {
+                    isGap = true;
+                    continue;
+                }
+
+                // Choose separator: '//' if a gap was recorded, otherwise '/'.
+                var sep = isGap ? "//" : "/";
+                isGap = false;
+
+                // Prefer Name if present and safe.
+                if (hasName && !nameBroken)
+                {
+                    xpathBuilder
+                        .Append(sep)
+                        .Append(control)
+                        .Append($"[@Name='{name}']");
+                }
+                // Else prefer AutomationId if present and safe.
+                else if (hasAutomationId && !autoBroken)
+                {
+                    xpathBuilder
+                        .Append(sep)
+                        .Append(control)
+                        .Append($"[@AutomationId='{automationId}']");
+                }
+                // Otherwise, identifiers exist but are broken (contain quotes) -> emit placeholder.
+                else
+                {
+                    xpathBuilder
+                        .Append(sep)
+                        .Append(control)
+                        .Append($"[@Name='~BROKEN~']");
+                }
+            }
+
+            // Return the constructed XPath-like locator string.
+            return xpathBuilder.ToString();
         }
 
         // Converts an IUIAutomationElement into a UiaNodeModel representation.
@@ -168,6 +280,7 @@ namespace UiaPeek.Extensions
                 ClassName = string.IsNullOrWhiteSpace(className) ? null : className,
                 ControlType = string.IsNullOrWhiteSpace(controlType) ? null : controlType,
                 ControlTypeId = controlTypeId,
+                Machine = machine,
                 Name = string.IsNullOrWhiteSpace(name) ? null : name,
                 Patterns = [.. patterns],
                 ProcessId = pid,

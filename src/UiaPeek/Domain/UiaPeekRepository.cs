@@ -25,9 +25,16 @@ namespace UiaPeek.Domain
             var element = automation.ElementFromPoint(pt: new tagPOINT { x = x, y = y });
 
             // If an element was found, build and return its ancestor chain; otherwise return null.
-            return element == null
-                ? null
-                : automation.NewAncestorChain(element);
+            var chain = automation.NewAncestorChain(element) ?? new UiaChainModel();
+
+            // Set the point information in the chain model if it exists.
+            chain.Point = new UiaPointModel { XPos = x, YPos = y };
+
+            // Build the absolute XPath locator for the ancestor chain.
+            chain.Locator = chain.ResolveLocator();
+
+            // Return the constructed ancestor chain.
+            return chain;
         }
     }
 }

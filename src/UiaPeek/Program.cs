@@ -12,6 +12,8 @@ using Microsoft.OpenApi.Models;
 
 using System;
 using System.Linq;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -20,12 +22,18 @@ using UiaPeek.Extensions;
 using UiaPeek.Formatters;
 using UiaPeek.Hubs;
 
-//var command = CommandBase.FindCommand(args);
-//if(command != null )
-//{
-//    command?.Invoke(args);
-//    return;
-//}
+// Attempt to resolve a command from the provided arguments.
+var command = CommandBase.FindCommand(args);
+
+// Early exit if a command was found and invoked.
+if (command != null)
+{
+    // Invoke the resolved command with the same arguments.
+    command.Invoke(args);
+
+    // Exit the application after command execution.
+    return;
+}
 
 // Write the ASCII logo for the Hub Controller with the specified version.
 ControllerUtilities.WriteAsciiLogo(version: "0000.00.00.0000");
@@ -65,18 +73,6 @@ builder.Services
         i.InputFormatters.Add(new PlainTextInputFormatter()))
     .AddJsonOptions(i =>
     {
-        // Configure JSON serializer to format JSON with indentation for readability.
-        i.JsonSerializerOptions.WriteIndented = false;
-
-        // Ignore properties with null values during serialization to reduce payload size.
-        i.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-
-        // Use camelCase naming for JSON properties to follow JavaScript conventions.
-        i.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-
-        // Enable case-insensitive property name matching during deserialization.
-        i.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
-
         // Add a custom type converter for handling specific types during serialization/deserialization.
         i.JsonSerializerOptions.Converters.Add(new TypeConverter());
 
@@ -91,6 +87,21 @@ builder.Services
 
         // Add a custom dictionary converter to handle serialization of dictionaries with string keys and object values.
         i.JsonSerializerOptions.Converters.Add(new DictionaryStringObjectJsonConverter());
+
+        // Ignore properties with null values during serialization to reduce payload size.
+        i.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+
+        // Use a relaxed JSON escaping strategy to allow special characters in the output.
+        i.JsonSerializerOptions.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+
+        // Enable case-insensitive property name matching during deserialization.
+        i.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+
+        // Use camelCase naming for JSON properties to follow JavaScript conventions.
+        i.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+
+        // Configure JSON serializer to format JSON with indentation for readability.
+        i.JsonSerializerOptions.WriteIndented = false;
     });
 
 // Add and configure Swagger for API documentation and testing.

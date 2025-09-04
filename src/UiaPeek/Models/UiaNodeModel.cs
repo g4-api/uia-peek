@@ -51,12 +51,7 @@ namespace UiaPeek.Models
         /// <summary>
         /// Indicates whether this node is the target element of interest.
         /// </summary>
-        public bool IsTargetElement { get; set; }
-
-        /// <summary>
-        /// Gets or sets a locator string for the element.
-        /// </summary>
-        public string Locator { get; set; } = string.Empty;
+        public bool IsTriggerElement { get; set; }
 
         /// <summary>
         /// Information about the machine hosting the UI element.
