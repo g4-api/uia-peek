@@ -1,5 +1,4 @@
 ﻿using G4.Extensions;
-using G4.Models;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
