@@ -28,11 +28,23 @@ namespace UiaPeek.Hubs
 
         // Resolves the UIA element at the given screen coordinates and
         // returns its ancestor chain back to the caller.
-        [HubMethodName(name: nameof(SendPeek))]
+        [HubMethodName(name: $"{nameof(SendPeek)}At")]
         public Task SendPeek(UiaPointModel point)
         {
             // Query the repository to get the UIA ancestor chain at the given coordinates.
             var peekResponse = _repository.Peek(x: point.XPos, y: point.YPos);
+
+            // Send the result back to the calling client.
+            return Clients.Caller.SendAsync("ReceivePeek", peekResponse);
+        }
+
+        // Resolves the UIA element at the given screen coordinates and
+        // returns its ancestor chain back to the caller.
+        [HubMethodName(name: $"{nameof(SendPeek)}Focused")]
+        public Task SendPeek()
+        {
+            // Query the repository to get the UIA ancestor chain from the currently focused element.
+            var peekResponse = _repository.Peek();
 
             // Send the result back to the calling client.
             return Clients.Caller.SendAsync("ReceivePeek", peekResponse);

@@ -35,16 +35,23 @@ namespace UiaPeek.Controllers
             contentTypes: MediaTypeNames.Application.Json)]
         #endregion
         public IActionResult Peek(
-            [FromQuery(Name = "x"), Required]
+            [FromQuery(Name = "x")]
             [SwaggerParameter(description: "The X screen coordinate in pixels (device-independent if applicable).")]
-            int x,
+            int? x,
 
-            [FromQuery(Name = "y"), Required]
+            [FromQuery(Name = "y")]
             [SwaggerParameter(description: "The Y screen coordinate in pixels (device-independent if applicable).")]
-            int y)
+            int? y,
+
+            [FromQuery(Name = "focused")]
+            [SwaggerParameter(description: "If true and if x, y or both are missing, peek the currently focused " +
+                "UI element instead of using coordinates.")]
+            bool focused)
         {
             // Get ancestor chain at the specified coordinates.
-            var chain = new UiaPeekRepository().Peek(x, y);
+            var chain = (x == null || y == null) && focused
+                ? new UiaPeekRepository().Peek()
+                : new UiaPeekRepository().Peek((int)x, (int)y);
 
             // Return the JSON result.
             return Ok(chain);
