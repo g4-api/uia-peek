@@ -1,7 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
 	<PropertyGroup>
-		<TargetFramework>net8.0</TargetFramework>
+		<!-- Assembly -->
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<AssemblyVersion>8.0.0.0</AssemblyVersion>
+		<FileVersion>8.0.0.0</FileVersion>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<SatelliteResourceLanguages>en-US</SatelliteResourceLanguages>
+		<LangVersion>latest</LangVersion>
+		<UserSecretsId>1f5fabba-72bd-4769-b41f-807b0214092b</UserSecretsId>
+		<ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+		<!-- https://learn.microsoft.com/en-us/dotnet/fundamentals/syslib-diagnostics/syslib1040-1049 -->
 		<NoWarn>$(NoWarn);SYSLIB1045</NoWarn>
 	</PropertyGroup>
 

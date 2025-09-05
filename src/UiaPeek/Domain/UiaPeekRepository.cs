@@ -36,5 +36,29 @@ namespace UiaPeek.Domain
             // Return the constructed ancestor chain.
             return chain;
         }
+
+        /// <summary>
+        /// Retrieves the currently focused UI Automation element and constructs
+        /// its ancestor chain representation, including an absolute XPath locator.
+        /// </summary>
+        /// <returns>A <see cref="UiaChainModel"/> representing the focused element and its ancestors,or an empty model if no element is currently focused.</returns>
+        public UiaChainModel Peek()
+        {
+            // Create a new instance of the UI Automation engine.
+            var automation = new CUIAutomation8();
+
+            // Get the element that currently has keyboard focus.
+            var element = automation.GetFocusedElement();
+
+            // Build the ancestor chain for the focused element,
+            // or return a new empty model if no element was found.
+            var chain = automation.NewAncestorChain(element) ?? new UiaChainModel();
+
+            // Generate the absolute XPath locator for the ancestor chain.
+            chain.Locator = chain.ResolveLocator();
+
+            // Return the ancestor chain model.
+            return chain;
+        }
     }
 }
