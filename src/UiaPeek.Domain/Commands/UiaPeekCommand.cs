@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 
 using UiaPeek.Domain;
 
-namespace UiaPeek.Commands
+namespace UiaPeek.Domain.Commands
 {
     /// <summary>
     /// A command that inspects a screen coordinate and prints the UI Automation

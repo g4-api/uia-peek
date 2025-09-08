@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 
-namespace UiaPeek.Models
+namespace UiaPeek.Domain.Models
 {
     /// <summary>
     /// Represents a generic error model used to provide standardized error responses.

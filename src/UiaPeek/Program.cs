@@ -17,9 +17,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 using UiaPeek.Domain;
-using UiaPeek.Extensions;
-using UiaPeek.Formatters;
-using UiaPeek.Hubs;
+using UiaPeek.Domain.Extensions;
+using UiaPeek.Domain.Formatters;
+using UiaPeek.Domain.Hubs;
 
 // Attempt to resolve a command from the provided arguments.
 var command = CommandBase.FindCommand(args);

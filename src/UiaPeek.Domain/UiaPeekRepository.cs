@@ -1,21 +1,14 @@
-﻿using UiaPeek.Extensions;
-using UiaPeek.Models;
+﻿using UiaPeek.Domain.Extensions;
+using UiaPeek.Domain.Models;
 
 using UIAutomationClient;
 
 namespace UiaPeek.Domain
 {
-    /// <summary>
-    /// Provides access to UI Automation elements and ancestor chain information.
-    /// </summary>
-    public class UiaPeekRepository
+    /// <inheritdoc />
+    public class UiaPeekRepository : IUiaPeekRepository
     {
-        /// <summary>
-        /// Retrieves the ancestor chain of the UI Automation element located at the given screen coordinates.
-        /// </summary>
-        /// <param name="x">The X-coordinate on the screen.</param>
-        /// <param name="y">The Y-coordinate on the screen.</param>
-        /// <returns>A <see cref="UiaChainModel"/> representing the ancestor chain of the element at the specified point, or <c>null</c> if no element is found.</returns>
+        /// <inheritdoc />
         public UiaChainModel Peek(int x, int y)
         {
             // Initialize the UI Automation engine.
@@ -37,11 +30,7 @@ namespace UiaPeek.Domain
             return chain;
         }
 
-        /// <summary>
-        /// Retrieves the currently focused UI Automation element and constructs
-        /// its ancestor chain representation, including an absolute XPath locator.
-        /// </summary>
-        /// <returns>A <see cref="UiaChainModel"/> representing the focused element and its ancestors,or an empty model if no element is currently focused.</returns>
+        /// <inheritdoc />
         public UiaChainModel Peek()
         {
             // Create a new instance of the UI Automation engine.

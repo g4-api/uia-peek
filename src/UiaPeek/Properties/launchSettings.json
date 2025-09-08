@@ -2,7 +2,6 @@
   "profiles": {
     "http": {
       "commandName": "Project",
-      "commandLineArgs": "peek -f",
       "launchBrowser": true,
       "launchUrl": "swagger",
       "environmentVariables": {

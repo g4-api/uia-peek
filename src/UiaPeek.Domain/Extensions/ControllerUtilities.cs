@@ -4,7 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 
-namespace UiaPeek.Extensions
+namespace UiaPeek.Domain.Extensions
 {
     /// <summary>
     /// Provides utility methods for controllers in the G4™ application.

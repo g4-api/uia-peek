@@ -4,11 +4,11 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
-using UiaPeek.Models;
+using UiaPeek.Domain.Models;
 
 using UIAutomationClient;
 
-namespace UiaPeek.Extensions
+namespace UiaPeek.Domain.Extensions
 {
     /// <summary>
     /// Local extension methods for UI Automation.

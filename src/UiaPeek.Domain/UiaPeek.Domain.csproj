@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<!-- Assembly -->
@@ -8,7 +8,6 @@
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<SatelliteResourceLanguages>en-US</SatelliteResourceLanguages>
 		<LangVersion>latest</LangVersion>
-		<UserSecretsId>1f5fabba-72bd-4769-b41f-807b0214092b</UserSecretsId>
 		<ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
@@ -17,12 +16,20 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Swashbuckle.AspNetCore" Version="9.0.4" />
-		<PackageReference Include="Swashbuckle.AspNetCore.Annotations" Version="9.0.4" />
+		<COMReference Include="UIAutomationClient">
+			<WrapperTool>tlbimp</WrapperTool>
+			<VersionMinor>0</VersionMinor>
+			<VersionMajor>1</VersionMajor>
+			<Guid>944de083-8fb8-45cf-bcb7-c477acb2f897</Guid>
+			<Lcid>0</Lcid>
+			<Isolated>false</Isolated>
+			<EmbedInteropTypes>false</EmbedInteropTypes>
+		</COMReference>
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\UiaPeek.Domain\UiaPeek.Domain.csproj" />
+		<PackageReference Include="CommandBridge" Version="2025.2.26.62" />
+		<PackageReference Include="G4.Extensions" Version="2025.8.11.43" />
 	</ItemGroup>
 
 </Project>

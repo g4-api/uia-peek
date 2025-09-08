@@ -2,7 +2,7 @@
 
 using UIAutomationClient;
 
-namespace UiaPeek.Models
+namespace UiaPeek.Domain.Models
 {
     public static class Cache
     {

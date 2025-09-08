@@ -1,0 +1,65 @@
+﻿<Window x:Class="UiaPeek.PathFinder.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        WindowStyle="ToolWindow"
+        Title="UiaPeek Path Finder v1.0"
+        ResizeMode="NoResize"
+        Height="240"
+        Width="370">
+    <Grid>
+        <Label Content="UiaPeek Path Finder v1.0"
+               HorizontalAlignment="Left"
+               Margin="10,10,0,0"
+               VerticalAlignment="Top"
+               Height="40"
+               Width="330"
+               FontSize="22"
+               FontWeight="Bold"/>
+
+        <TextBox HorizontalAlignment="Left"
+                 Margin="10,55,0,0"
+                 TextWrapping="Wrap"
+                 VerticalAlignment="Top"
+                 Width="330"
+                 Name="TxbPath"
+                 Height="76"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"/>
+
+        <Button Content="▶ _Start"
+                HorizontalAlignment="Left"
+                Margin="10,136,0,0"
+                VerticalAlignment="Top"
+                RenderTransformOrigin="-0.57,1.481"
+                Height="30"
+                Width="70"
+                Name="BtnStartStop"
+                Click="BtnStartStop_Click"
+                AccessKeyManager.AccessKeyPressed="BtnStartStop_AccessKeyPressed"
+                Cursor="Hand"/>
+
+        <Label Content="Faster"
+               HorizontalAlignment="Left"
+               Margin="7,167,0,0"
+               VerticalAlignment="Top"
+               RenderTransformOrigin="0.405,-0.33"/>
+
+        <Slider HorizontalAlignment="Left"
+                Margin="48,171,0,0"
+                VerticalAlignment="Top"
+                Width="247"
+                Minimum="500"
+                Maximum="3000"
+                Value="1000"
+                Name="SldRefreshSpeed" ValueChanged="SldRefreshSpeed_ValueChanged"/>
+
+        <Label Content="Slower"
+               HorizontalAlignment="Left"
+               Margin="295,167,0,0"
+               VerticalAlignment="Top"
+               RenderTransformOrigin="0.263,0.21"/>
+    </Grid>
+</Window>

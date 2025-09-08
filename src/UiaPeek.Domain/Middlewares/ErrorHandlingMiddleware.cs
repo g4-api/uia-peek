@@ -14,9 +14,9 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
-using UiaPeek.Models;
+using UiaPeek.Domain.Models;
 
-namespace UiaPeek.Middlewares
+namespace UiaPeek.Domain.Middlewares
 {
     /// <summary>
     /// Middleware to handle exceptions and enhance error responses in the HTTP request pipeline.

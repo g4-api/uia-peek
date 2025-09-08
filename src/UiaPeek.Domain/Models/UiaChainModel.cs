@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace UiaPeek.Models
+namespace UiaPeek.Domain.Models
 {
     /// <summary>
     /// Represents a chain of UI Automation nodes, starting from a trigger element

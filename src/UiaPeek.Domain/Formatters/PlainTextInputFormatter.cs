@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc.Formatters;
 using System.Net.Mime;
 using System.Threading.Tasks;
 
-namespace UiaPeek.Formatters
+namespace UiaPeek.Domain.Formatters
 {
     /// <summary>
     /// An input formatter that handles plain text content types.

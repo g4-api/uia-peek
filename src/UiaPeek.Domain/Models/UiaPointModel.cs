@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace UiaPeek.Models
+namespace UiaPeek.Domain.Models
 {
     /// <summary>
     /// Represents a screen coordinate point in pixels.

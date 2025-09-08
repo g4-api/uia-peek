@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Text.Json.Serialization;
 
-using UiaPeek.Extensions;
+using UiaPeek.Domain.Extensions;
 
 using UIAutomationClient;
 
-namespace UiaPeek.Models
+namespace UiaPeek.Domain.Models
 {
     /// <summary>
     /// Represents a UI Automation (UIA) node in the element tree.

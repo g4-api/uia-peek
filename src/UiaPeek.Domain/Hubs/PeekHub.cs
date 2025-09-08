@@ -2,10 +2,9 @@
 
 using System.Threading.Tasks;
 
-using UiaPeek.Domain;
-using UiaPeek.Models;
+using UiaPeek.Domain.Models;
 
-namespace UiaPeek.Hubs
+namespace UiaPeek.Domain.Hubs
 {
     /// <summary>
     /// SignalR hub for handling UI Automation (UIA) peek operations.
