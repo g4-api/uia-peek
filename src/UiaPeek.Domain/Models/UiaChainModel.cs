@@ -29,5 +29,10 @@ namespace UiaPeek.Domain.Models
         /// representing the ancestor closest to the desktop root.
         /// </summary>
         public UiaNodeModel TopWindow { get; set; } = null;
+
+        /// <summary>
+        /// The action or event that caused this chain to be recorded, if applicable.
+        /// </summary>
+        public string Trigger { get; set; } = string.Empty;
     }
 }

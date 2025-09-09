@@ -26,6 +26,9 @@ namespace UiaPeek.Domain
             // Build the absolute XPath locator for the ancestor chain.
             chain.Locator = chain.ResolveLocator();
 
+            // Indicate that this chain was triggered by a hover action.
+            chain.Trigger = "Hover";
+
             // Return the constructed ancestor chain.
             return chain;
         }
@@ -45,6 +48,9 @@ namespace UiaPeek.Domain
 
             // Generate the absolute XPath locator for the ancestor chain.
             chain.Locator = chain.ResolveLocator();
+
+            // Indicate that this chain was triggered by a focus action.
+            chain.Trigger = "Focus";
 
             // Return the ancestor chain model.
             return chain;

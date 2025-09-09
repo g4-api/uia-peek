@@ -6,7 +6,11 @@
 		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 		<UseWPF>true</UseWPF>
 		<SatelliteResourceLanguages>en-US</SatelliteResourceLanguages>
+		<ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+		<!-- https://learn.microsoft.com/en-us/dotnet/fundamentals/syslib-diagnostics/syslib1040-1049 -->
+		<NoWarn>$(NoWarn);SYSLIB1045</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>
