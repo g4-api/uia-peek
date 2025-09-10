@@ -12,8 +12,6 @@ using System.Threading.Tasks;
 using UiaPeek.Domain.Hubs;
 using UiaPeek.Domain.Models;
 
-using UIAutomationClient;
-
 namespace UiaPeek.Domain.Middlewares
 {
     public sealed class EventCaptureService(
