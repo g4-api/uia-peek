@@ -7,20 +7,20 @@ using System.Threading.Tasks;
 using UiaPeek.Domain;
 using UiaPeek.Domain.Models;
 
-namespace UiaPeek.Hubs
+namespace UiaPeek.Domain.Hubs
 {
     /// <summary>
     /// SignalR hub for handling UI Automation (UIA) peek operations.
     /// Provides real-time communication for heartbeat checks and
     /// ancestor chain inspection at specific screen coordinates.
     /// </summary>
-    public class PeekHub(UiaPeekRepository repository) : Hub
+    public class PeekHub(IUiaPeekRepository repository) : Hub
     {
         // Collection of active recording sessions keyed by a unique session id.
         private readonly static ConcurrentDictionary<string, ConcurrentBag<UiaChainModel>> s_sessions = new();
 
         // Repository used for querying UIA elements at coordinates.
-        private readonly UiaPeekRepository _repository = repository;
+        private readonly IUiaPeekRepository _repository = repository;
 
         // Sends a heartbeat message to the caller.
         // This can be used by clients to verify the connection is alive.

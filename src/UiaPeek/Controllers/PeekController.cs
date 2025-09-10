@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 
 using Swashbuckle.AspNetCore.Annotations;
 
-using System.ComponentModel.DataAnnotations;
 using System.Net.Mime;
 
 using UiaPeek.Domain;
@@ -13,7 +12,7 @@ namespace UiaPeek.Controllers
     [ApiController]
     [Route("/api/v4/g4/[controller]")]
     [SwaggerTag(description: "Utilities for peeking UI Automation elements and returning ancestor chains for debugging and inspection.")]
-    public class PeekController : ControllerBase
+    public class PeekController(IUiaPeekRepository repository) : ControllerBase
     {
         [HttpGet]
         #region *** OpenApi Documentation ***
@@ -50,8 +49,8 @@ namespace UiaPeek.Controllers
         {
             // Get ancestor chain at the specified coordinates.
             var chain = (x == null || y == null) && focused
-                ? new UiaPeekRepository().Peek()
-                : new UiaPeekRepository().Peek((int)x, (int)y);
+                ? repository.Peek()
+                : repository.Peek((int)x, (int)y);
 
             // Return the JSON result.
             return Ok(chain);

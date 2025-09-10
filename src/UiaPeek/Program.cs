@@ -19,7 +19,8 @@ using System.Text.Json.Serialization;
 using UiaPeek.Domain;
 using UiaPeek.Domain.Extensions;
 using UiaPeek.Domain.Formatters;
-using UiaPeek.Hubs;
+using UiaPeek.Domain.Hubs;
+using UiaPeek.Domain.Middlewares;
 
 // Attempt to resolve a command from the provided arguments.
 var command = CommandBase.FindCommand(args);
@@ -43,7 +44,7 @@ var builder = WebApplication.CreateBuilder(args);
 #region *** Url & Kestrel ***
 // Configure the URLs that the Kestrel web server should listen on.
 // If no URLs are specified, it uses the default settings.
-builder.WebHost.UseUrls();
+builder.WebHost.UseKestrel();
 #endregion
 
 #region *** Service       ***
@@ -193,12 +194,15 @@ builder.Services
         };
     });
 
+// Add a hosted service for capturing global keyboard and mouse events.
+builder.Services.AddHostedService<EventCaptureService>();
+
 // Add IHttpClientFactory to the service collection for making HTTP requests.
 builder.Services.AddHttpClient();
 #endregion
 
 #region *** Dependencies  ***
-builder.Services.AddTransient<UiaPeekRepository, UiaPeekRepository>();
+builder.Services.AddTransient<IUiaPeekRepository, UiaPeekRepository>();
 #endregion
 
 #region *** Configuration ***
