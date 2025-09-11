@@ -14,6 +14,15 @@ using UiaPeek.Domain.Models;
 
 namespace UiaPeek.Domain.Middlewares
 {
+    /// <summary>
+    /// Background service that installs and manages global low-level keyboard
+    /// and mouse hooks using the Win32 API.  
+    /// Captured input events are translated into structured models and
+    /// broadcast in real time to connected SignalR clients via <see cref="PeekHub"/>.  
+    /// </summary>
+    /// <param name="hub">SignalR hub context used to broadcast captured input events to all connected clients.</param>
+    /// <param name="logger">Logger for diagnostics, error reporting, and lifecycle information about the service.</param>
+    /// <param name="repository">Repository used to resolve the current UI element chain at the time of an event,providing context for recorded input.</param>
     public sealed class EventCaptureService(
         IHubContext<PeekHub> hub,
         ILogger<EventCaptureService> logger,
@@ -109,14 +118,32 @@ namespace UiaPeek.Domain.Middlewares
         private const int VK_SHIFT = 0x10;         // Shift virtual key (generic)
         #endregion
 
+        #region *** Delegates ***
+        /// <summary>
+        /// Defines the signature for hook procedures used with <see cref="SetWindowsHookEx"/>.  
+        /// This delegate is invoked for low-level keyboard and mouse events captured globally,  
+        /// allowing custom processing before the event continues down the hook chain.
+        /// </summary>
+        /// <param name="nCode">Hook code (≥0 to process, &lt;0 to skip).</param>
+        /// <param name="wParam">Event message identifier (e.g., WM_KEYDOWN, WM_MOUSEMOVE).</param>
+        /// <param name="lParam">Pointer to event data (KBDLLHOOKSTRUCT / MSLLHOOKSTRUCT).</param>
+        /// <returns>Result of <see cref="CallNextHookEx"/> for proper propagation.</returns>
         private delegate IntPtr HookProcess(int nCode, IntPtr wParam, IntPtr lParam);
+        #endregion
 
-        // Cache what we printed on keydown so keyup matches exactly
+        #region *** Fields    ***
+        // Cache of pressed keys: stores the resolved key text on KeyDown so that
+        // the corresponding KeyUp event can reuse the exact same string.
         private static readonly Dictionary<uint, string> _keysLog = [];
 
-        // Fields to hold onto the delegate instances and hook handles, preventing GC
+        // Delegate reference for the low-level keyboard hook callback.  
+        // Must be kept alive to prevent garbage collection while the hook is active.
         private HookProcess _keyboardCallback;
+
+        // Delegate reference for the low-level mouse hook callback.  
+        // Must be kept alive to prevent garbage collection while the hook is active.
         private HookProcess _mouseCallback;
+        #endregion
 
         /// <inheritdoc />
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -134,10 +161,10 @@ namespace UiaPeek.Domain.Middlewares
             return Task.Factory.StartNew(action: () =>
             {
                 // Install the global keyboard hook.
-                keyboardHook = SetHook(WH_KEYBOARD_LL, _keyboardCallback, out var keyboardError);
+                keyboardHook = InitializeWindowsHook(WH_KEYBOARD_LL, _keyboardCallback, out var keyboardError);
 
                 // Install the global mouse hook.
-                mouseHook = SetHook(WH_MOUSE_LL, _mouseCallback, out var mouseError);
+                mouseHook = InitializeWindowsHook(WH_MOUSE_LL, _mouseCallback, out var mouseError);
 
                 // Check if the keyboard hook failed to install.
                 if (keyboardHook == IntPtr.Zero)
@@ -204,6 +231,7 @@ namespace UiaPeek.Domain.Middlewares
             scheduler: TaskScheduler.Default);
         }
 
+        #region *** Methods   ***
         // Low-level Windows keyboard hook callback.
         // Captures keyboard events (key down and key up), resolves the key text,
         // and broadcasts the event through SignalR to connected clients.
@@ -225,15 +253,16 @@ namespace UiaPeek.Domain.Middlewares
             }
 
             // Extract keyboard event details from the pointer.
-            var kbd = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+            var kbd = Marshal.PtrToStructure<KeyboardHook>(lParam);
 
             // Variable to hold the resolved key text.
             string keyText;
 
+            // Handle key down and key up events separately.
             if (isKeyDown)
             {
                 // Compute human-readable key text on KeyDown.
-                keyText = ResolveKeyText(kbd);
+                keyText = ResolveKeyName(kbd);
 
                 // Cache the key text for use when the corresponding KeyUp occurs.
                 _keysLog[kbd.vkCode] = keyText;
@@ -244,7 +273,7 @@ namespace UiaPeek.Domain.Middlewares
                 if (!_keysLog.TryGetValue(kbd.vkCode, out keyText))
                 {
                     // Fallback: resolve text if no cached entry exists (rare case).
-                    keyText = ResolveKeyText(kbd);
+                    keyText = ResolveKeyName(kbd);
                 }
 
                 // Remove the cached entry to keep memory clean.
@@ -258,7 +287,12 @@ namespace UiaPeek.Domain.Middlewares
                 Event = isKeyDown ? "Down" : "Up",
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Type = "Keyboard",
-                Value = keyText
+                Value = new
+                {
+                    ScanCode = kbd.scanCode,
+                    VirtualKey = kbd.vkCode,
+                    Key = keyText
+                }
             };
 
             // Broadcast the captured event to all connected SignalR clients.
@@ -271,237 +305,485 @@ namespace UiaPeek.Domain.Middlewares
             return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
         }
 
+        // Low-level Windows mouse hook callback.
+        // Captures mouse input events (clicks, scrolls, etc.), builds structured
+        // event data, and broadcasts them via SignalR to connected clients.
         private IntPtr ReceiveMouseEvent(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0)
+            // If the hook code is invalid, pass the event down the chain immediately.
+            if (nCode < 0)
             {
-                var ms = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
-
-                int msg = (int)wParam;
-                if (msg == WM_MOUSEMOVE)
-                    return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam); // still ignore move
-
-                // Handle vertical & horizontal wheel with direction
-                if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL)
-                {
-                    // HIGHWORD(mouseData) is a signed delta in multiples of WHEEL_DELTA (120)
-                    short delta = unchecked((short)((ms.mouseData >> 16) & 0xFFFF));
-                    int notches = Math.Abs(delta) / WHEEL_DELTA;
-                    if (notches == 0) notches = 1; // high-res devices can report smaller deltas; normalize to 1
-
-                    if (msg == WM_MOUSEWHEEL)
-                    {
-                        string dir = delta > 0 ? "up" : "down";
-                        Console.WriteLine($"[mouse] wheel {dir} ({notches}) at {ms.pt.X},{ms.pt.Y}");
-                    }
-                    else // WM_MOUSEHWHEEL
-                    {
-                        string dir = delta > 0 ? "right" : "left";
-                        Console.WriteLine($"[mouse] hwheel {dir} ({notches}) at {ms.pt.X},{ms.pt.Y}");
-                    }
-
-                    return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
-                }
-
-                // Other mouse buttons (unchanged)
-                Console.WriteLine($"[mouse] {MapMouseMessage(wParam)} at {ms.pt.X},{ms.pt.Y}");
+                return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
             }
+
+            // Explicitly ignore mouse move events (too frequent, not useful for logging).
+            if (wParam == WM_MOUSEMOVE)
+            {
+                return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+            }
+
+            // Extract mouse event details from the pointer.
+            var mouse = Marshal.PtrToStructure<MouseHook>(lParam);
+
+            // Handle all mouse events EXCEPT wheel events (vertical/horizontal scroll).
+            if (wParam != WM_MOUSEWHEEL && wParam != WM_MOUSEHWHEEL)
+            {
+                // Build a structured event model with context (clicks, button up/down, etc.).
+                var clickMessage = new RecordingEventModel
+                {
+                    Chain = repository.Peek(x: mouse.pt.X, y: mouse.pt.Y), // UI element at cursor position.
+                    Event = GetMouseEventName(wParam), // Resolve readable event name.
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    Type = "Mouse",
+                    Value = new
+                    {
+                        mouse.pt.X,
+                        mouse.pt.Y
+                    }
+                };
+
+                // Broadcast the captured mouse click event to all connected SignalR clients.
+                hub.Clients.All.SendAsync("ReceiveRecordingEvent", new { Value = clickMessage });
+
+                // Always continue the hook chain.
+                return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+            }
+
+            // Handle vertical & horizontal wheel events.
+            // HIGHWORD(mouseData) is a signed delta (in multiples of WHEEL_DELTA = 120).
+            var delta = unchecked((short)((mouse.mouseData >> 16) & 0xFFFF));
+            var notches = Math.Abs(delta) / WHEEL_DELTA;
+
+            // High-resolution devices may report deltas smaller than WHEEL_DELTA.
+            // Normalize to at least 1 notch for consistency.
+            if (notches == 0)
+            {
+                notches = 1;
+            }
+
+            // Determine scroll direction based on event type and delta sign.
+            var direction = string.Empty;
+            if (wParam == WM_MOUSEWHEEL)
+            {
+                direction = delta > 0 ? "Up" : "Down";
+            }
+            else if (wParam == WM_MOUSEHWHEEL)
+            {
+                direction = delta > 0 ? "Right" : "Left";
+            }
+
+            // Build a structured wheel event with scroll details.
+            var wheelMessage = new RecordingEventModel
+            {
+                Chain = repository.Peek(x: mouse.pt.X, y: mouse.pt.Y),
+                Event = $"{GetMouseEventName(wParam)} {direction}",
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Type = "Mouse",
+                Value = new
+                {
+                    Notches = notches, // Number of notches scrolled.
+                    mouse.pt.X,
+                    mouse.pt.Y
+                }
+            };
+
+            // Broadcast the captured wheel event to all connected SignalR clients.
+            hub.Clients.All.SendAsync(method: "ReceiveRecordingEvent", arg1: new
+            {
+                Value = wheelMessage
+            });
+
+            // Continue the hook chain.
             return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
         }
 
-        // ----------------- key name / char helpers -----------------
-        private static string ResolveKeyText(in KBDLLHOOKSTRUCT kbd)
+        // Resolves a human-readable string for a given keyboard event.
+        // Attempts to produce the actual typed character (layout-aware), and if not
+        // possible, falls back to a key name (localized or VK-based).
+        private static string ResolveKeyName(in KeyboardHook keyboard)
         {
-            string typed = VkToChar(kbd.vkCode, kbd.scanCode);
+            // Try to resolve the typed character (respects Shift, CapsLock, current layout).
+            var typed = ConvertToChar(keyboard);
+
+            // If we got a visible character, return it directly.
             if (!string.IsNullOrEmpty(typed))
             {
+                // Look at the first char to filter out control or whitespace.
                 char c = typed[0];
+
+                // If it's a visible, non-control glyph (e.g., 'a', 'A', '!'), return it directly.
                 if (!char.IsControl(c) && c != ' ')
                 {
-                    return typed; // printable glyph like "a", "A", "!"
+                    return typed;
                 }
             }
 
-            string name = GetKeyReadableName(kbd.vkCode, kbd.scanCode, kbd.flags);
+            // Fallback: resolve by key name (localized where possible).
+            string name = GetKeyName(keyboard);
+
+            // Normalize space key to lowercase "space" for consistency.
             return string.Equals(name, "Space", StringComparison.OrdinalIgnoreCase)
                 ? "space"
                 : name;
         }
 
-        private static string GetKeyReadableName(uint vk, uint scanCode, uint flags)
+        // Converts the current key press described by a low-level keyboard hook struct
+        // into the *typed* character string, honoring Shift/CapsLock and the *current* keyboard layout.
+        private static string ConvertToChar(KeyboardHook keyboard)
         {
-            // First try localized key name (layout aware)
-            int lp = (int)(scanCode << 16);
-            if ((flags & LLKHF_EXTENDED) != 0) lp |= 1 << 24;
+            // Helper: ensure the "pressed" (high bit) state matches the actual key state
+            // so that ToUnicodeEx can compute the correct character with modifiers applied.
+            static void SetKeyStateBit(byte[] keyboardState, int virtualKey)
+            {
+                // Get the real-time key state for this virtual key.
+                var state = GetKeyState(virtualKey);
 
-            var sb = new StringBuilder(64);
-            int len = GetKeyNameText(lp, sb, sb.Capacity);
-            if (len > 0) return sb.ToString(0, len);
+                // High bit (0x80) indicates key is currently down
+                if ((state & 0x8000) != 0)
+                {
+                    keyboardState[virtualKey] |= 0x80;
+                }
+                else
+                {
+                    keyboardState[virtualKey] &= 0x7F;
+                }
+            }
 
-            // Fallback to VK-based name
-            return VkToString((int)vk);
-        }
+            // Helper: ensure the "toggle" (low bit) state (e.g., CapsLock/NumLock) matches reality.
+            static void SetToggleBit(byte[] keyboardState, int virtualKey)
+            {
+                // Get the real-time key state for this virtual key.
+                var state = GetKeyState(virtualKey);
 
-        // Produce the actual typed character, respecting Shift/Caps and current layout
-        private static string VkToChar(uint vkCode, uint scanCode)
-        {
-            // Gather full keyboard state with modifiers/toggles
-            byte[] ks = new byte[256];
-            // Base state
-            GetKeyboardState(ks);
+                // Low bit (0x01) indicates toggled ON
+                if ((state & 0x0001) != 0)
+                {
+                    // toggled on (e.g., CapsLock)
+                    keyboardState[virtualKey] |= 0x01;
+                }
+                else
+                {
+                    // toggled off
+                    keyboardState[virtualKey] &= 0xFE;
+                }
+            }
 
-            // Explicitly update modifier/toggle keys (ensures correctness in hook thread)
-            SetKeyStateBit(ks, VK_SHIFT);
-            SetKeyStateBit(ks, VK_LSHIFT);
-            SetKeyStateBit(ks, VK_RSHIFT);
-            SetKeyStateBit(ks, VK_CONTROL);
-            SetKeyStateBit(ks, VK_LCONTROL);
-            SetKeyStateBit(ks, VK_RCONTROL);
-            SetKeyStateBit(ks, VK_MENU);
-            SetKeyStateBit(ks, VK_LMENU);
-            SetKeyStateBit(ks, VK_RMENU);
+            // Capture full keyboard state (256 entries) as the base snapshot.
+            // This pulls per-virtual-key flags that ToUnicodeEx uses for translation.
+            var keyboardState = new byte[256];
+            GetKeyboardState(keyboardState);
 
-            SetToggleBit(ks, VK_CAPITAL);
-            SetToggleBit(ks, VK_NUMLOCK);
-            SetToggleBit(ks, VK_SCROLL);
+            // Explicitly refresh modifier keys in this thread context to avoid stale flags.
+            // (The hook thread may not share the same implicit state as the foreground thread.)
+            SetKeyStateBit(keyboardState, VK_SHIFT);
+            SetKeyStateBit(keyboardState, VK_LSHIFT);
+            SetKeyStateBit(keyboardState, VK_RSHIFT);
+            SetKeyStateBit(keyboardState, VK_CONTROL);
+            SetKeyStateBit(keyboardState, VK_LCONTROL);
+            SetKeyStateBit(keyboardState, VK_RCONTROL);
+            SetKeyStateBit(keyboardState, VK_MENU);
+            SetKeyStateBit(keyboardState, VK_LMENU);
+            SetKeyStateBit(keyboardState, VK_RMENU);
 
-            // Translate using current layout
-            var sb = new StringBuilder(8);
-            IntPtr layout = GetKeyboardLayout(0);
+            // Ensure toggles (Caps/Num/Scroll) are correct for this translation.
+            SetToggleBit(keyboardState, VK_CAPITAL);
+            SetToggleBit(keyboardState, VK_NUMLOCK);
+            SetToggleBit(keyboardState, VK_SCROLL);
 
-            int rc = ToUnicodeEx(vkCode, scanCode, ks, sb, sb.Capacity, 0, layout);
+            // Translate using the *current* active layout for thread 0 (foreground).
+            var stringBuilder = new StringBuilder(8);
+            var layout = GetKeyboardLayout(0);
 
-            // rc > 0 => count of UTF-16 chars written
-            // rc == 0 => no translation (non-char key)
-            // rc < 0 => dead-key; we can return empty and let next key produce composition
+            // ToUnicodeEx returns:
+            //  > 0 : number of UTF-16 code units written
+            //    0 : no translation (non-character key)
+            //  < 0 : dead key; key press sets a diacritic state waiting for the next key
+            int rc = ToUnicodeEx(
+                keyboard.vkCode,
+                keyboard.scanCode,
+                keyboardState,
+                stringBuilder,
+                stringBuilder.Capacity,
+                0, // flags: 0 => regular behavior (no menu-accelerator translation)
+                layout);
+
             if (rc > 0)
             {
-                var s = sb.ToString(0, rc);
-                // normalize surrogate pairs if any; also keep just first glyph for simplicity
+                // Extract exactly the number of UTF-16 code units produced.
+                // Could be more than one code unit (e.g., surrogate pairs).
+                var s = stringBuilder.ToString(0, rc);
+
+                // Return as-is; caller may choose to collapse/normalize further if desired.
                 return s;
             }
+
+            // rc == 0 => non-text key (e.g., Shift), or rc < 0 => dead-key prime (no visible glyph yet)
             return string.Empty;
         }
 
-        private static void SetKeyStateBit(byte[] ks, int vk)
+        // Resolves a human-readable (localized, layout-aware) key name for a given
+        // low-level keyboard hook event. Falls back to a VK-code string if the OS
+        // cannot provide a name.
+        static string GetKeyName(KeyboardHook keyboard)
         {
-            short state = GetKeyState(vk);
-            if ((state & 0x8000) != 0) ks[vk] |= 0x80;   // key is down
-            else ks[vk] &= 0x7F;
-        }
-
-        private static void SetToggleBit(byte[] ks, int vk)
-        {
-            short state = GetKeyState(vk);
-            if ((state & 0x0001) != 0) ks[vk] |= 0x01;   // toggled on (e.g., CapsLock)
-            else ks[vk] &= 0xFE;
-        }
-
-        private static string MapMouseMessage(IntPtr wParam) => (int)wParam switch
-        {
-            WM_LBUTTONDOWN => "left down",
-            WM_LBUTTONUP => "left up",
-            WM_RBUTTONDOWN => "right down",
-            WM_RBUTTONUP => "right up",
-            WM_MBUTTONDOWN => "middle down",
-            WM_MBUTTONUP => "middle up",
-            WM_MOUSEWHEEL => "wheel",
-            _ => $"msg=0x{(int)wParam:X}"
-        };
-
-        private static string VkToString(int vk) => vk switch
-        {
-            0x08 => "Backspace",
-            0x09 => "Tab",
-            0x0D => "Enter",
-            0x10 => "Shift",
-            0x11 => "Ctrl",
-            0x12 => "Alt",
-            0x14 => "CapsLock",
-            0x1B => "Esc",
-            0x20 => "Space",
-            0x21 => "PageUp",
-            0x22 => "PageDown",
-            0x23 => "End",
-            0x24 => "Home",
-            0x25 => "Left",
-            0x26 => "Up",
-            0x27 => "Right",
-            0x28 => "Down",
-            0x2C => "PrintScreen",
-            0x2D => "Insert",
-            0x2E => "Delete",
-            0x5B => "LWin",
-            0x5C => "RWin",
-            0x5D => "Apps",
-            0x90 => "NumLock",
-            0x91 => "ScrollLock",
-            0xA0 => "LShift",
-            0xA1 => "RShift",
-            0xA2 => "LCtrl",
-            0xA3 => "RCtrl",
-            0xA4 => "LAlt",
-            0xA5 => "RAlt",
-            >= 0x70 and <= 0x7B => $"F{vk - 0x6F}",         // F1..F12
-            >= 0x30 and <= 0x39 => ((char)vk).ToString(),   // '0'..'9'
-            >= 0x41 and <= 0x5A => ((char)vk).ToString(),   // 'A'..'Z'
-            _ => $"VK_{vk}"
-        };
-
-        // ----------------- hook setup -----------------
-
-        private static IntPtr SetHook(int idHook, HookProcess proc, out int lastErr)
-        {
-            var hook = SetWindowsHookEx(idHook, proc, GetModuleHandle(null), 0);
-            if (hook == IntPtr.Zero)
+            // Converts a virtual-key code into a human-readable string label.
+            // Handles common control keys, navigation keys, modifiers, function keys,
+            // alphanumeric keys, and provides a fallback for unknown codes.
+            static string ConvertToString(int virtualKey) => virtualKey switch
             {
-                lastErr = Marshal.GetLastWin32Error();
-                hook = SetWindowsHookEx(idHook, proc, IntPtr.Zero, 0);
-                if (hook == IntPtr.Zero) lastErr = Marshal.GetLastWin32Error();
+                // Control keys
+                0x08 => "Backspace",
+                0x09 => "Tab",
+                0x0D => "Enter",
+                0x1B => "Esc",
+                0x20 => "Space",
+
+                // Modifier keys
+                0x10 => "Shift",
+                0x11 => "Ctrl",
+                0x12 => "Alt",
+                0x5B => "LWin",
+                0x5C => "RWin",
+                0x5D => "Apps",   // Context menu key
+                0xA0 => "LShift",
+                0xA1 => "RShift",
+                0xA2 => "LCtrl",
+                0xA3 => "RCtrl",
+                0xA4 => "LAlt",
+                0xA5 => "RAlt",
+
+                // Lock keys
+                0x14 => "CapsLock",
+                0x90 => "NumLock",
+                0x91 => "ScrollLock",
+
+                // Navigation keys
+                0x21 => "PageUp",
+                0x22 => "PageDown",
+                0x23 => "End",
+                0x24 => "Home",
+                0x25 => "Left",
+                0x26 => "Up",
+                0x27 => "Right",
+                0x28 => "Down",
+                0x2C => "PrintScreen",
+                0x2D => "Insert",
+                0x2E => "Delete",
+
+                // Function keys (F1–F12)
+                >= 0x70 and <= 0x7B => $"F{virtualKey - 0x6F}",
+
+                // Number keys '0'–'9'
+                >= 0x30 and <= 0x39 => ((char)virtualKey).ToString(),
+
+                // Uppercase letters 'A'–'Z'
+                >= 0x41 and <= 0x5A => ((char)virtualKey).ToString(),
+
+                // Fallback: show raw virtual-key code
+                _ => $"VK_{virtualKey}"
+            };
+
+            // Compose LPARAM-style value for GetKeyNameText:
+            // - Bits 16..23: scan code
+            // - Bit 24: extended key (e.g., right Alt/Ctrl, arrow keys on keypad, etc.)
+            int lParam = (int)(keyboard.scanCode << 16);
+
+            // If the event is for an extended key, set bit 24 as required by the API.
+            if ((keyboard.flags & LLKHF_EXTENDED) != 0)
+            {
+                lParam |= 1 << 24;
+            }
+
+            // Ask Windows for a localized/display name for this key.
+            var sb = new StringBuilder(64);
+            int length = GetKeyNameText(lParam, sb, sb.Capacity);
+
+            // If the OS returned a name (length > 0), use it; otherwise,
+            // fall back to a deterministic VK-based string representation.
+            return length > 0
+                ? sb.ToString(0, length)
+                : ConvertToString((int)keyboard.vkCode);
+        }
+
+        // Gets a descriptive string for a mouse event based on its Windows message identifier.
+        private static string GetMouseEventName(IntPtr wParam) => wParam switch
+        {
+            // Left button press/release
+            WM_LBUTTONDOWN => "Left Down",
+            WM_LBUTTONUP => "Left Up",
+
+            // Right button press/release
+            WM_RBUTTONDOWN => "Right Down",
+            WM_RBUTTONUP => "Right Up",
+
+            // Middle button press/release
+            WM_MBUTTONDOWN => "Middle Down",
+            WM_MBUTTONUP => "Middle Up",
+
+            // Vertical or horizontal scroll wheel
+            WM_MOUSEWHEEL or WM_MOUSEHWHEEL => "Wheel",
+
+            // Unknown/unhandled message: return raw message code
+            _ => $"msg=0x{wParam:X}"
+        };
+
+        // Attempts to install a low-level Windows hook (e.g., keyboard or mouse).
+        // Tries with the current module handle first, then falls back to using <c>IntPtr.Zero</c>.
+        private static IntPtr InitializeWindowsHook(int idHook, HookProcess process, out int lastError)
+        {
+            // First attempt: associate hook with the current module
+            var hook = SetWindowsHookEx(idHook, process, GetModuleHandle(null), 0);
+
+            if (hook != IntPtr.Zero)
+            {
+                // Success on first attempt → no error
+                lastError = 0;
                 return hook;
             }
-            lastErr = 0;
+
+            // Failure: capture error from first attempt
+            lastError = Marshal.GetLastWin32Error();
+
+            // Fallback: try again with IntPtr.Zero (common for .NET apps without native modules)
+            hook = SetWindowsHookEx(idHook, process, IntPtr.Zero, 0);
+
+            // If successful on second attempt, clear the error
+            if (hook == IntPtr.Zero)
+            {
+                // Still failed → capture last error
+                lastError = Marshal.GetLastWin32Error();
+            }
+
+            // Return the hook handle (or IntPtr.Zero if both attempts failed)
             return hook;
         }
+        #endregion
 
-        // ----------------- interop & consts -----------------
-
-        
-
-        #region *** Structs ***
+        #region *** Structs   ***
+        /// <summary>
+        /// Contains information about a low-level keyboard input event.
+        /// Used with WH_KEYBOARD_LL hooks.
+        /// </summary>
         [StructLayout(LayoutKind.Sequential)]
-        private struct POINT { public int X; public int Y; }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct KBDLLHOOKSTRUCT
+        private struct KeyboardHook
         {
+            /// <summary>
+            /// The virtual-key code of the key.
+            /// </summary>
             public uint vkCode;
+
+            /// <summary>
+            /// The hardware scan code of the key.
+            /// </summary>
             public uint scanCode;
+
+            /// <summary>
+            /// Event-injection flags and extended key information.
+            /// </summary>
             public uint flags;
+
+            /// <summary>
+            /// The time stamp for this message, in milliseconds.
+            /// </summary>
             public uint time;
+
+            /// <summary>
+            /// Additional information associated with the message.
+            /// </summary>
             public IntPtr dwExtraInfo;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct MSLLHOOKSTRUCT
-        {
-            public POINT pt;
-            public uint mouseData;
-            public uint flags;
-            public uint time;
-            public IntPtr dwExtraInfo;
-        }
-
+        /// <summary>
+        /// Represents a message retrieved from a thread's message queue.
+        /// Equivalent to the Win32 MSG structure.
+        /// </summary>
         [StructLayout(LayoutKind.Sequential)]
         private struct Message
         {
+            /// <summary>
+            /// Handle to the window that received the message.
+            /// </summary>
             public IntPtr hwnd;
+
+            /// <summary>
+            /// The message identifier (e.g., WM_KEYDOWN).
+            /// </summary>
             public uint message;
+
+            /// <summary>
+            /// Additional message information (word parameter).
+            /// </summary>
             public UIntPtr wParam;
+
+            /// <summary>
+            /// Additional message information (long parameter).
+            /// </summary>
             public IntPtr lParam;
+
+            /// <summary>
+            /// The time at which the message was posted.
+            /// </summary>
             public uint time;
-            public POINT pt;
+
+            /// <summary>
+            /// The cursor position, in screen coordinates, when the message was posted.
+            /// </summary>
+            public Point pt;
+
+            /// <summary>
+            /// Reserved/private value used internally by Windows.
+            /// </summary>
             public uint lPrivate;
+        }
+
+        /// <summary>
+        /// Contains information about a low-level mouse input event.
+        /// Used with WH_MOUSE_LL hooks.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MouseHook
+        {
+            /// <summary>
+            /// The X and Y coordinates of the cursor, in screen coordinates.
+            /// </summary>
+            public Point pt;
+
+            /// <summary>
+            /// Additional mouse-specific data (wheel delta, X buttons, etc.).
+            /// </summary>
+            public uint mouseData;
+
+            /// <summary>
+            /// Event-injection flags and extra information about the mouse message.
+            /// </summary>
+            public uint flags;
+
+            /// <summary>
+            /// The time stamp for this message, in milliseconds.
+            /// </summary>
+            public uint time;
+
+            /// <summary>
+            /// Additional information associated with the message.
+            /// </summary>
+            public IntPtr dwExtraInfo;
+        }
+
+        /// <summary>
+        /// Defines the X and Y coordinates of a point.
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct Point
+        {
+            /// <summary>
+            /// The X coordinate, in pixels.
+            /// </summary>
+            public int X;
+
+            /// <summary>
+            /// The Y coordinate, in pixels.
+            /// </summary>
+            public int Y;
         }
         #endregion
     }

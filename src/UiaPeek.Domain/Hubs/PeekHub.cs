@@ -4,7 +4,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
-using UiaPeek.Domain;
 using UiaPeek.Domain.Models;
 
 namespace UiaPeek.Domain.Hubs
