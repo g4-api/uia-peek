@@ -29,42 +29,52 @@ namespace UiaPeek.Domain.Middlewares
         IUiaPeekRepository repository) : BackgroundService
     {
         #region *** User32    ***
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern sbyte GetMessage(out Message lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
-
-        [DllImport("user32.dll")]
-        private static extern bool TranslateMessage(ref Message lpMsg);
-        
-        [DllImport("user32.dll")]
-        private static extern IntPtr DispatchMessage(ref Message lpMsg);
-        
-        [DllImport("user32.dll")]
-        private static extern void PostQuitMessage(int nExitCode);
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        private static extern IntPtr SetWindowsHookEx(int idHook, HookProcess lpfn, IntPtr hMod, uint dwThreadId);
-        
-        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
-        
+        // Passes the hook information to the next hook procedure in the current hook chain.
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
 
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        private static extern IntPtr GetModuleHandle(string? lpModuleName);
+        // Dispatches a message to a window procedure.
+        [DllImport("user32.dll")]
+        private static extern IntPtr DispatchMessage(ref Message lpMsg);
 
-        [DllImport("user32.dll")]
-        private static extern bool GetKeyboardState(byte[] lpKeyState);
-        
-        [DllImport("user32.dll")]
-        private static extern short GetKeyState(int nVirtKey);
-        
+        // Retrieves the active keyboard layout for the specified thread.
         [DllImport("user32.dll")]
         private static extern IntPtr GetKeyboardLayout(uint idThread);
 
+        // Copies the status of 256 virtual keys to the provided buffer.
+        [DllImport("user32.dll")]
+        private static extern bool GetKeyboardState(byte[] lpKeyState);
+
+        // Retrieves a human-readable key name for a virtual key / scan code combination.
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetKeyNameText(int lParam, StringBuilder lpString, int nSize);
 
+        // Retrieves the status of the specified virtual key.
+        [DllImport("user32.dll")]
+        private static extern short GetKeyState(int nVirtKey);
+
+        // Retrieves a message from the calling thread's message queue.
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern sbyte GetMessage(out Message lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+        // Retrieves a module handle for the specified module.
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string? lpModuleName);
+
+        // Posts a WM_QUIT message to the thread message queue, signaling message loop termination.
+        [DllImport("user32.dll")]
+        private static extern void PostQuitMessage(int nExitCode);
+
+        // Installs an application-defined hook procedure into a hook chain.
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr SetWindowsHookEx(int idHook, HookProcess lpfn, IntPtr hMod, uint dwThreadId);
+
+        // Translates virtual-key messages into character messages (e.g., WM_CHAR) and posts them to the message queue.
+        [DllImport("user32.dll")]
+        private static extern bool TranslateMessage(ref Message lpMsg);
+
+        // Converts a virtual-key code and keyboard state to the corresponding Unicode character(s)
+        // using a specified keyboard layout.
         [DllImport("user32.dll")]
         private static extern int ToUnicodeEx(
             uint wVirtKey,
@@ -74,6 +84,10 @@ namespace UiaPeek.Domain.Middlewares
             int cchBuff,
             uint wFlags,
             IntPtr dwhkl);
+
+        // Removes a hook procedure installed in a hook chain.
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
         #endregion
 
         #region *** Constants ***
