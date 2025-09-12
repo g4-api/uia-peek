@@ -100,7 +100,7 @@ jobs:
     # Step to publish the project
     - name: Publish
       shell: pwsh
-      run: msbuild ${{ env.projectName }}.sln /t:Publish /p:Configuration=Release /p:PublishDir=${{ env.binariesDirectory }}/publish/
+      run: msbuild ${{ env.projectName }}.csproj /t:Publish /p:Configuration=Release /p:PublishDir=${{ env.binariesDirectory }}/publish/
 
     # Step to create a build artifact
     - name: Create Build Artifact
