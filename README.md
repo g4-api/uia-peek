@@ -371,7 +371,7 @@ UiaPeek Path Finder shows the UI-Automation path (an XPath-like locator) for wha
   │  │                                                 │  │
   │  └─────────────────────────────────────────────────┘  │
   │                                                       │
-  │  [ ▶ Start / ⬛ Stop]                                  │
+  │  [ ▶ Start / ⬛ Stop]                                │
   │                                                       │
   │  Faster  ◄───────┈┈┈┈┈●┈┈┈┈────────►  Slower          │
   │                                                       │
