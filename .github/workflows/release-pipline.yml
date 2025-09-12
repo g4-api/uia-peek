@@ -25,7 +25,6 @@ env:
   buildConfiguration: 'Release'
   buildPlatform: 'any cpu'
   projectName: UiaPeek
-  utilitiesProjectName: UiaPeek.PathFinder
 
 # Default settings for all run steps
 defaults:

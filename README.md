@@ -360,7 +360,7 @@ UiaPeek Path Finder shows the UI-Automation path (an XPath-like locator) for wha
 
 ### Launch
 
-* Open **UiaPeek Path Finder v1.0**.
+* Open **UiaPeek Path Finder v1.0** by running `UiaPeek.PathFinder.exe`.
 * You’ll see a title, a locator text box, a **Start/Stop** button, and a **Faster/Slower** slider.
 
   ```none
@@ -371,9 +371,9 @@ UiaPeek Path Finder shows the UI-Automation path (an XPath-like locator) for wha
   │  │                                                 │  │
   │  └─────────────────────────────────────────────────┘  │
   │                                                       │
-  │  [ ▶ Start ] [ ⬛ Stop ]                               │
+  │  [ ▶ Start / ⬛ Stop]                                  │
   │                                                       │
-  │  Slower  ◄───────┈┈┈┈┈●┈┈┈┈────────►  Faster          │
+  │  Faster  ◄───────┈┈┈┈┈●┈┈┈┈────────►  Slower          │
   │                                                       │
   ╰───────────────────────────────────────────────────────╯
   ```

@@ -23,6 +23,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\UiaPeek.Domain\UiaPeek.Domain.csproj" />
+		<ProjectReference Include="..\UiaPeek.PathFinder\UiaPeek.PathFinder.csproj" />
 	</ItemGroup>
 
 </Project>
