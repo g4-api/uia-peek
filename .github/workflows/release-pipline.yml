@@ -1,0 +1,154 @@
+# Workflow to build and release G4™ UiaPeek for production
+name: Build & Release
+
+# Define permissions for the workflow
+permissions:
+  contents: write
+  checks: write
+  pull-requests: write
+  statuses: write
+
+# Trigger the workflow on push to the main branch
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+  workflow_dispatch:
+
+# Set environment variables
+env:
+  artifactStagingDirectory: ${{ github.workspace }}/artifact_staging
+  artifactType: 'Production'
+  binariesDirectory: ${{ github.workspace }}/binaries
+  buildConfiguration: 'Release'
+  buildPlatform: 'any cpu'
+  projectName: UiaPeek
+
+# Default settings for all run steps
+defaults:
+  run:
+    working-directory: src
+
+# Define jobs for the workflow
+jobs:
+  # Job to get the version of the build
+  new-version:
+    name: New Version
+    runs-on: windows-latest
+
+    # Outputs of the job
+    outputs:
+      buildVersion: ${{ steps.parse-version.outputs.version }}
+      validVersion: ${{ steps.validate-version.outputs.valid }}
+
+    steps:
+    # Step to checkout the repository
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    # Step to parse the build version for GitHub tag
+    - name: Parse Build Version for GitHub Tag
+      id: parse-version
+      shell: pwsh
+      run: echo "version=$(Get-Date -UFormat '%Y.%m.%d').${{ github.run_number }}" >> $env:GITHUB_OUTPUT
+
+    # Step to validate the parsed version
+    - name: Validate Version ${{ steps.parse-version.outputs.version }}
+      id: validate-version
+      shell: pwsh
+      run: |
+        $version = "${{ steps.parse-version.outputs.version }}"
+        echo "valid=$($version -match '^\d+(\.\d+){3}$')" >> $env:GITHUB_OUTPUT
+
+  # Job to build and publish the project
+  build:
+    name: Build & Publish Version ${{ needs.new-version.outputs.buildVersion }}
+    runs-on: windows-latest
+    needs: new-version
+    if: ${{ needs.new-version.result == 'success' && needs.new-version.outputs.validVersion == 'True' }}
+
+    # Outputs of the job
+    outputs:
+      buildVersion: ${{ needs.new-version.outputs.buildVersion }}
+    
+    # Set environment variables specific to the build job
+    env:
+      buildVersion: ${{ needs.new-version.outputs.buildVersion }}
+    
+    steps:
+    # Step to checkout the repository
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    # Step to setup .NET Core SDK
+    - name: Setup .NET Core SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8
+
+    # Step to restore packages
+    - name: Restore Packages
+      shell: pwsh
+      run: dotnet restore
+
+    # Add msbuild to PATH to ensure that MSBuild is available for the build and publish steps
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v2
+
+    # Step to publish the project
+    - name: Publish
+      shell: pwsh
+      run: msbuild ${{ env.projectName }}.sln /t:Publish /p:Configuration=Release /p:PublishDir=${{ env.binariesDirectory }}/publish/
+
+    # Step to create a build artifact
+    - name: Create Build Artifact
+      shell: pwsh
+      run: |
+        New-Item -Path "${{ env.artifactStagingDirectory }}" -ItemType Directory
+        Compress-Archive `
+            -Path ${{ env.binariesDirectory }}/publish/* `
+            -DestinationPath ${{ env.artifactStagingDirectory }}/${{ env.projectName }}.${{ env.buildVersion }}-win-x64.zip 
+
+    # Step to upload the build artifact
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: drop
+        path: ${{ env.artifactStagingDirectory }}/*.zip
+
+  # Job to create a GitHub release and tag the new version
+  create-release:
+    name: New GitHub Release Version ${{ needs.new-version.outputs.buildVersion }}
+    runs-on: windows-latest
+    needs: 
+      - new-version
+      - build
+    if: success()
+
+    # Set environment variables specific to the release job
+    env:
+      buildVersion: ${{ needs.new-version.outputs.buildVersion }}
+
+    steps:
+    # Step to checkout the repository
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Step to download build artifacts
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: drop
+
+    # Step to create a GitHub release and tag
+    - name: Create GitHub Release & Tag v${{ env.buildVersion }}
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ./${{ env.projectName }}.${{ env.buildVersion }}-win-x64.zip
+        tag_name: v${{ env.buildVersion }}
+        name: ${{ env.artifactType }} v${{ env.buildVersion }}
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
