@@ -1,5 +1,7 @@
 ﻿# UiaPeek — UI Automation Peek & Record Tool
 
+[![Build & Release](https://github.com/g4-api/uia-peek/actions/workflows/release-pipline.yml/badge.svg)](https://github.com/g4-api/uia-peek/actions/workflows/release-pipline.yml)
+
 ## Table of Contents
 
 * [What is UiaPeek?](#what-is-uiapeek)
