@@ -7,7 +7,7 @@
         WindowStyle="ToolWindow"
         Title="UiaPeek Path Finder v1.0"
         ResizeMode="NoResize"
-        Height="240"
+        Height="290"
         Width="370">
     <Grid>
         <Label Content="UiaPeek Path Finder v1.0"
@@ -31,7 +31,7 @@
 
         <Button Content="▶ _Start"
                 HorizontalAlignment="Left"
-                Margin="10,136,0,0"
+                Margin="10,162,0,0"
                 VerticalAlignment="Top"
                 RenderTransformOrigin="-0.57,1.481"
                 Height="30"
@@ -41,16 +41,48 @@
                 AccessKeyManager.AccessKeyPressed="BtnStartStop_AccessKeyPressed"
                 Cursor="Hand"/>
 
+        <Button Content="_Test Path"
+                HorizontalAlignment="Left"
+                Margin="160,162,0,0"
+                VerticalAlignment="Top"
+                RenderTransformOrigin="-0.57,1.481"
+                Height="30"
+                Width="70"
+                Name="BtnTestPath"
+                Click="BtnTestPath_Click"
+                AccessKeyManager.AccessKeyPressed="BtnTestPath_AccessKeyPressed"
+                Cursor="Hand"/>
+
+        <Label Content="Idle"
+               HorizontalAlignment="Left"
+               Margin="11,133,0,0"
+               Name="LblStatus"
+               VerticalAlignment="Top"
+               RenderTransformOrigin="0.405,-0.33"
+               Width="55"
+               Visibility="Visible"
+               FontSize="9"/>
+
+        <Label Content="0000.000s"
+               HorizontalAlignment="Left"
+               Margin="70,133,0,0"
+               Name="LblTime"
+               VerticalAlignment="Top"
+               RenderTransformOrigin="0.405,-0.33"
+               Width="70"
+               Visibility="Visible"
+               FontSize="9"/>
+
         <Label Content="Faster"
                HorizontalAlignment="Left"
-               Margin="7,167,0,0"
+               Margin="11,200,0,0"
                VerticalAlignment="Top"
                RenderTransformOrigin="0.405,-0.33"/>
 
         <Slider HorizontalAlignment="Left"
-                Margin="48,171,0,0"
+                Margin="52,207,0,0"
                 VerticalAlignment="Top"
-                Width="247"
+                Width="246"
                 Minimum="500"
                 Maximum="3000"
                 Value="1000"
@@ -58,8 +90,44 @@
 
         <Label Content="Slower"
                HorizontalAlignment="Left"
-               Margin="295,167,0,0"
+               Margin="297,200,0,0"
                VerticalAlignment="Top"
-               RenderTransformOrigin="0.263,0.21"/>
+               RenderTransformOrigin="0.263,0.21" Height="26" Width="45"/>
+
+        <Label Content="X:"
+               HorizontalAlignment="Left"
+               Margin="196,131,0,0"
+               VerticalAlignment="Top"
+               RenderTransformOrigin="-6.268,-0.931"/>
+
+        <TextBox HorizontalAlignment="Left"
+                 Margin="221,135,0,0"
+                 TextWrapping="Wrap"
+                 VerticalAlignment="Top"
+                 Width="45"
+                 Name="TxbAxisX"/>
+
+        <Label Content="Y:"
+               HorizontalAlignment="Left"
+               Margin="271,131,0,0"
+               VerticalAlignment="Top"/>
+
+        <TextBox HorizontalAlignment="Left"
+                 Margin="295,136,0,0"
+                 TextWrapping="Wrap"
+                 VerticalAlignment="Top"
+                 Width="45"
+                 Name="TxbAxisY"/>
+
+        <Button Content="Set _Position"
+                HorizontalAlignment="Left"
+                Margin="85,162,0,0"
+                VerticalAlignment="Top"
+                Height="30"
+                Width="70"
+                Name="BtnSetPosition"
+                Click="BtnSetPosition_Click"
+                AccessKeyManager.AccessKeyPressed="BtnSetPosition_AccessKeyPressed"
+                Cursor="Hand"/>
     </Grid>
 </Window>
