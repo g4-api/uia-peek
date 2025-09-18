@@ -525,7 +525,7 @@ namespace UiaPeek.PathFinder
     /// Factory class for creating a Document Object Model (DOM) representation of UI Automation elements.
     /// </summary>
     /// <param name="rootElement">The root UI Automation element.</param>
-    public class DocumentObjectModelFactory(IUIAutomationElement rootElement)
+    internal class DocumentObjectModelFactory(IUIAutomationElement rootElement)
     {
         // The root UI Automation element used as the starting point for creating the DOM.
         private readonly IUIAutomationElement _rootElement = rootElement;
