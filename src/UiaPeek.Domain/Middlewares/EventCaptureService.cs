@@ -298,7 +298,7 @@ namespace UiaPeek.Domain.Middlewares
             var message = new RecordingEventModel
             {
                 Chain = repository.Peek(),
-                Event = isKeyDown ? "Down" : "Up",
+                Event = isKeyDown ? "Key Down" : "Key Up",
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Type = "Keyboard",
                 Value = new
