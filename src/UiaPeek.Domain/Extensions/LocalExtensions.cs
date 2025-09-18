@@ -356,14 +356,14 @@ namespace UiaPeek.Domain.Extensions
                 // COM object is not available or failed; return fallback.
                 return fallback;
             }
-            catch (NullReferenceException)
-            {
-                // Getter referenced a null object; return fallback.
-                return fallback;
-            }
             catch (InvalidComObjectException)
             {
                 // The COM object has been released or is invalid; return fallback.
+                return fallback;
+            }
+            catch (Exception)
+            {
+                // Getter referenced a null object; return fallback.
                 return fallback;
             }
         }

@@ -59,7 +59,7 @@ namespace UiaPeek.Domain.Middlewares
 
         // Retrieves a module handle for the specified module.
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        private static extern IntPtr GetModuleHandle(string? lpModuleName);
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
 
         // Posts a WM_QUIT message to the thread message queue, signaling message loop termination.
         [DllImport("user32.dll")]
