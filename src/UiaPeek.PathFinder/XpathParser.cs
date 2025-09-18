@@ -57,10 +57,9 @@ namespace UiaPeek.PathFinder
             var matches = Regex.Matches(xpath, pattern);
 
             // Convert the matches to a list of strings, trim whitespace, and filter out empty tokens
-            return matches.Cast<Match>()
+            return [.. matches.Cast<Match>()
                 .Select(match => match.Value.Trim(' ', '/'))
-                .Where(token => !string.IsNullOrEmpty(token))
-                .ToList();
+                .Where(token => !string.IsNullOrEmpty(token))];
         }
 
         // Creates a new UI Automation condition tree based on the specified segments.

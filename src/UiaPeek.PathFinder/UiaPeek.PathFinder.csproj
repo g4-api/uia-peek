@@ -10,7 +10,7 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
 		<!-- https://learn.microsoft.com/en-us/dotnet/fundamentals/syslib-diagnostics/syslib1040-1049 -->
-		<NoWarn>$(NoWarn);SYSLIB1045</NoWarn>
+		<NoWarn>$(NoWarn);SYSLIB1045;MSB3305</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>

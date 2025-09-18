@@ -3,6 +3,7 @@
 	<PropertyGroup>
 		<!-- Assembly -->
 		<TargetFramework>net8.0-windows</TargetFramework>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 		<AssemblyVersion>8.0.0.0</AssemblyVersion>
 		<FileVersion>8.0.0.0</FileVersion>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>

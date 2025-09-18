@@ -15,7 +15,7 @@ using System.Windows.Media;
 using System.Xml.Linq;
 
 using UiaPeek.Domain;
-using UiaPeek.Models;
+using UiaPeek.PathFinder.Models;
 
 using UIAutomationClient;
 
@@ -263,7 +263,7 @@ namespace UiaPeek.PathFinder
     /// <summary>
     /// Contains extension methods for working with UI Automation elements.
     /// </summary>
-    public static class UiaExtensions
+    internal static class UiaExtensions
     {
         /// <summary>
         /// Gets a dictionary of attributes for the specified UI Automation element within the default timeout period of 5 seconds.
@@ -452,23 +452,23 @@ namespace UiaPeek.PathFinder
         /// </summary>
         /// <param name="element">The UI Automation element to extract data from.</param>
         /// <returns>An <see cref="ObservableCollection{ElementData}"/> containing element data.</returns>
-        public static ObservableCollection<ElementData> ExtractElementData(this IUIAutomationElement element)
+        public static ObservableCollection<ElementDataModel> ExtractElementData(this IUIAutomationElement element)
         {
             // Get properties starting with "Current" from the UI Automation element type
             var attributes = element.GetAttributes();
 
             // Create a collection of ElementData from the properties
-            var collection = attributes.Select(i => new ElementData { Property = i.Key, Value = i.Value });
+            var collection = attributes.Select(i => new ElementDataModel { Property = i.Key, Value = i.Value });
 
             // Return the element data collection as an ObservableCollection
-            return new ObservableCollection<ElementData>(collection);
+            return new ObservableCollection<ElementDataModel>(collection);
         }
 
         // Finds a UI automation element based on the given XPath expression.
-        private static (int Status, Element Element) FindElement(IUIAutomationElement applicationRoot, string xpath)
+        private static (int Status, ElementModel Element) FindElement(IUIAutomationElement applicationRoot, string xpath)
         {
             // Converts an IUIAutomationElement to an Element.
-            static Element ConvertToElement(IUIAutomationElement automationElement)
+            static ElementModel ConvertToElement(IUIAutomationElement automationElement)
             {
                 // Generate a unique ID for the element based on the AutomationId, or use a new GUID if AutomationId is empty.
                 var automationId = automationElement.CurrentAutomationId;
@@ -477,7 +477,7 @@ namespace UiaPeek.PathFinder
                     : automationElement.CurrentAutomationId;
 
                 // Create a Location object based on the current bounding rectangle of the UI Automation element.
-                var location = new Location
+                var location = new LocationModel
                 {
                     Bottom = automationElement.CurrentBoundingRectangle.bottom,
                     Left = automationElement.CurrentBoundingRectangle.left,
@@ -486,7 +486,7 @@ namespace UiaPeek.PathFinder
                 };
 
                 // Create a new Element object and populate its properties.
-                var element = new Element
+                var element = new ElementModel
                 {
                     Id = id,
                     UIAutomationElement = automationElement,
@@ -669,115 +669,5 @@ namespace UiaPeek.PathFinder
             // Join the XML node representations into a single string and return it.
             return string.Join(" ", xmlNode);
         }
-    }
-}
-
-namespace UiaPeek.Models
-{
-    /// <summary>
-    /// Represents data for an element with a property and its corresponding value.
-    /// </summary>
-    public class ElementData
-    {
-        /// <summary>
-        /// Gets or sets the property of the element.
-        /// </summary>
-        public string Property { get; set; }
-
-        /// <summary>
-        /// Gets or sets the value of the element.
-        /// </summary>
-        public string Value { get; set; }
-    }
-
-    /// <summary>
-    /// Represents an element in the user interface.
-    /// </summary>
-    public class Element
-    {
-        /// <summary>
-        /// Initializes a new instance of the Element class.
-        /// </summary>
-        public Element()
-        {
-            // Generate a new unique identifier using Guid.NewGuid() and assign it to the Id property.
-            Id = $"{Guid.NewGuid()}";
-        }
-
-        /// <summary>
-        /// Gets or sets the clickable point of the element.
-        /// </summary>
-        public ClickablePoint ClickablePoint { get; set; }
-
-        /// <summary>
-        /// Gets or sets the unique identifier of the element.
-        /// </summary>
-        public string Id { get; set; }
-
-        /// <summary>
-        /// Gets or sets the location of the element on the screen.
-        /// </summary>
-        public Location Location { get; set; }
-
-        /// <summary>
-        /// Gets or sets the XML representation of the element.
-        /// </summary>
-        public XNode Node { get; set; }
-
-        /// <summary>
-        /// Gets or sets the UI Automation element associated with this element.
-        /// </summary>
-        public IUIAutomationElement UIAutomationElement { get; set; }
-    }
-
-    /// <summary>
-    /// Represents the location (bounding box) of an element on the screen.
-    /// </summary>
-    public class Location
-    {
-        /// <summary>
-        /// Gets or sets the bottom coordinate of the element.
-        /// </summary>
-        public int Bottom { get; set; }
-
-        /// <summary>
-        /// Gets or sets the left coordinate of the element.
-        /// </summary>
-        public int Left { get; set; }
-
-        /// <summary>
-        /// Gets or sets the right coordinate of the element.
-        /// </summary>
-        public int Right { get; set; }
-
-        /// <summary>
-        /// Gets or sets the top coordinate of the element.
-        /// </summary>
-        public int Top { get; set; }
-    }
-
-    /// <summary>
-    /// Represents a clickable point on the screen.
-    /// </summary>
-    /// <param name="xpos">The X-coordinate of the clickable point.</param>
-    /// <param name="ypos">The Y-coordinate of the clickable point.</param>
-    public class ClickablePoint(int xpos, int ypos)
-    {
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ClickablePoint"/> class with default coordinates (0, 0).
-        /// </summary>
-        public ClickablePoint()
-            : this(xpos: 0, ypos: 0)
-        { }
-
-        /// <summary>
-        /// Gets or sets the X-coordinate of the clickable point.
-        /// </summary>
-        public int XPos { get; set; } = xpos;
-
-        /// <summary>
-        /// Gets or sets the Y-coordinate of the clickable point.
-        /// </summary>
-        public int YPos { get; set; } = ypos;
     }
 }

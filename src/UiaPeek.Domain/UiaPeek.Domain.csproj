@@ -3,6 +3,7 @@
 	<PropertyGroup>
 		<!-- Assembly -->
 		<TargetFramework>net8.0-windows</TargetFramework>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 		<AssemblyVersion>8.0.0.0</AssemblyVersion>
 		<FileVersion>8.0.0.0</FileVersion>
 		<IsPackable>false</IsPackable>
@@ -13,7 +14,7 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
 		<!-- https://learn.microsoft.com/en-us/dotnet/fundamentals/syslib-diagnostics/syslib1040-1049 -->
-		<NoWarn>$(NoWarn);SYSLIB1045;IDE0130;SYSLIB1054;CA2101;S4200</NoWarn>
+		<NoWarn>$(NoWarn);SYSLIB1045;IDE0130;SYSLIB1054;CA2101;S4200;MSB3305</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>

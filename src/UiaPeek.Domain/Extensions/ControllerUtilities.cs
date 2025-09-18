@@ -56,14 +56,13 @@ namespace UiaPeek.Domain.Extensions
                 // Get the host entry for the local machine
                 var host = Dns.GetHostEntry(Dns.GetHostName());
 
-                // Iterate through the list of IP addresses associated with the host
-                foreach (var ip in host.AddressList.Where(ip => ip.AddressFamily == AddressFamily.InterNetwork))
+                // Use LINQ to find the first IPv4 address, if any
+                var ip = host.AddressList
+                    .FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+
+                if (ip != null && !string.IsNullOrEmpty(ip.ToString()))
                 {
-                    // If the IP address is not null or empty, return it
-                    if (!string.IsNullOrEmpty(ip.ToString()))
-                    {
-                        return ip.ToString();
-                    }
+                    return ip.ToString();
                 }
 
                 // Throw an exception if no valid IP address is found
