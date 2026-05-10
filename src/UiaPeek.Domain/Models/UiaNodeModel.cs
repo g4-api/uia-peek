@@ -15,7 +15,14 @@ namespace UiaPeek.Domain.Models
     /// </remarks>
     public class UiaNodeModel : RecorderNodeModel<IUIAutomationElement>
     {
-        // Intentionally empty — provides a domain-specific node type for UIA recordings.
-        // Add UIA-specific fields or logic here if needed in future.
+        /// <summary>
+        /// 0-based index of this element among all UIA siblings under the same parent.
+        /// </summary>
+        public int SiblingIndex { get; set; } = 0;
+
+        /// <summary>
+        /// 0-based index of this element among UIA siblings that share the same ControlType under the same parent.
+        /// </summary>
+        public int SiblingIndexOfSameControlType { get; set; } = 0;
     }
 }
