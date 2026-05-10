@@ -141,18 +141,27 @@ namespace UiaPeek.Domain.Extensions
             var nodes = chain?.Path ?? [];
             var builder = new StringBuilder("/Desktop");
 
+            // Set to true when a UWP CoreWindow node is skipped; causes the next node to use '//'
+            // because UIA cannot step through the UWP layer with a single '/'.
+            var isGap = false;
+
             foreach (var node in nodes)
             {
                 // Control type label, falling back to '*' when the type is unknown.
                 var control = node.ControlType ?? "*";
 
-                // UWP CoreWindow elements are invisible to UIA — omit from the path entirely.
-                // The adjacent nodes connect with '/' as if the UWP layer does not exist.
+                // UWP CoreWindow elements are invisible to UIA — omit from the path but mark a gap
+                // so the following node uses '//' to bridge the unreachable UWP layer.
                 var isUwp = node.ClassName?.Equals("Windows.UI.Core.CoreWindow", StringComparison.OrdinalIgnoreCase) == true;
                 if (isUwp)
                 {
+                    isGap = true;
                     continue;
                 }
+
+                // '//' when bridging a UWP gap, '/' for every other step.
+                var separator = isGap ? "//" : "/";
+                isGap = false;
 
                 var automationId = node.AutomationId;
                 var name = node.Name;
@@ -163,17 +172,17 @@ namespace UiaPeek.Domain.Extensions
                 if (hasAutomationId)
                 {
                     // Strong identifier — use AutomationId predicate.
-                    builder.Append('/').Append(control).Append($"[@AutomationId='{automationId}']");
+                    builder.Append(separator).Append(control).Append($"[@AutomationId='{automationId}']");
                 }
                 else if (hasName)
                 {
                     // Secondary identifier — use Name predicate.
-                    builder.Append('/').Append(control).Append($"[@Name='{name}']");
+                    builder.Append(separator).Append(control).Append($"[@Name='{name}']");
                 }
                 else
                 {
                     // No usable identifier — disambiguate with 1-based index among same-ControlType siblings.
-                    builder.Append('/').Append(control).Append($"[{node.SiblingIndexOfSameControlType}]");
+                    builder.Append(separator).Append(control).Append($"[{node.SiblingIndexOfSameControlType}]");
                 }
             }
 
