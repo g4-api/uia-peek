@@ -36,7 +36,7 @@ namespace Common.Domain.Models
         public string ControlType { get; set; }
 
         /// <summary>
-        /// Gets or sets the underlying IUIAutomationElement instance.
+        /// Gets or sets the underlying Element instance.
         /// </summary>
         [JsonIgnore]
         public T Element { get; set; }

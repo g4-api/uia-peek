@@ -31,11 +31,15 @@
 
 	<ItemGroup>
 		<PackageReference Include="CommandBridge" Version="2025.2.26.62" />
-		<PackageReference Include="G4.Extensions" Version="2025.8.11.43" />
+		<PackageReference Include="G4.Extensions" Version="2026.4.29.65" />
 	</ItemGroup>
 
 	<ItemGroup>
 	  <ProjectReference Include="..\Common.Domain\Common.Domain.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Native\" />
 	</ItemGroup>
 
 </Project>

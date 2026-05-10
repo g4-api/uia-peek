@@ -242,7 +242,6 @@ app.MapControllers();
 app.MapHub<ChromiumPeekHub>($"/hub/v4/g4/peek").RequireCors("CorsPolicy");
 #endregion
 
-
 StartChromiumWithExtension();
 
 // Start the application and wait for it to finish.
@@ -268,11 +267,7 @@ static void StartChromiumWithExtension()
 
     var browserCandidates = new[]
     {
-        @"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            @"Microsoft\Edge\Application\msedge.exe")
+        @"E:\G4\g4-sandbox-v2026.02.12.64\browsers\chrome\chrome.exe"
     };
 
     var browserPath = browserCandidates.FirstOrDefault(File.Exists);
@@ -294,7 +289,7 @@ static void StartChromiumWithExtension()
 
     // No manual quotes needed anywhere here
     psi.ArgumentList.Add($"--remote-debugging-port={remoteDebuggingPort}");
-    psi.ArgumentList.Add($"--user-data-dir={userDataDir}");
+   // psi.ArgumentList.Add($"--user-data-dir={userDataDir}");
     psi.ArgumentList.Add($"--load-extension={extensionDir}");
     // optional, once it's stable:
     // psi.ArgumentList.Add($"--disable-extensions-except={extensionDir}");
@@ -318,5 +313,3 @@ static void StartChromiumWithExtension()
         Console.WriteLine("[ChromiumPeek] Failed to start browser: " + ex);
     }
 }
-
-
