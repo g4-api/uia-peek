@@ -82,6 +82,11 @@ namespace UiaPeek.Domain.Extensions
                     break;
                 }
 
+                // Calculate sibling indexes while both current element and parent are available.
+                var (siblingIdx, sameTypeIdx) = GetSiblingIndexes(walker, automation, parent, current, node.ControlTypeId);
+                node.SiblingIndex = siblingIdx;
+                node.SiblingIndexOfSameControlType = sameTypeIdx;
+
                 // Stop climbing further if the parent is the root desktop element.
                 try
                 {
@@ -109,10 +114,7 @@ namespace UiaPeek.Domain.Extensions
             var topWindow = nodes.FirstOrDefault();
 
             // The top window is the first node in the reversed list.
-            if (topWindow != null)
-            {
-                topWindow.IsTopWindow = true;
-            }
+            topWindow?.IsTopWindow = true;
 
             // Return the structured chain model.
             return new UiaChainModel
@@ -123,103 +125,68 @@ namespace UiaPeek.Domain.Extensions
         }
 
         /// <summary>
-        /// Builds a UIA XPath-like locator string from a <see cref="RecorderChainModel"/>.
+        /// Builds a deterministic UIA XPath-like locator string from a <see cref="UiaChainModel"/>.
+        /// Every ancestor node is included in the path using a single <c>/</c> separator.
+        /// Nodes are identified by <c>AutomationId</c> or <c>Name</c> when safe, otherwise by
+        /// a 1-based sibling index among nodes of the same <c>ControlType</c>.
+        /// UWP <c>Windows.UI.Core.CoreWindow</c> nodes are omitted because UIA cannot resolve them.
         /// </summary>
-        /// <param name="chain">The chain containing the ordered UIA nodes (trigger → ancestors).</param>
-        /// <returns>A locator string beginning with <c>/Desktop</c> that walks the chain using <c>/</c> for contiguous ancestors and <c>//</c> when gaps are present.</returns>
+        /// <param name="chain">The chain containing the ordered UIA ancestor nodes.</param>
+        /// <returns>A deterministic locator string beginning with <c>/Desktop</c>.</returns>
         public static string ResolveLocator(this UiaChainModel chain)
         {
-            // Local helper: identifiers are considered "broken" if they contain quotes (not safely embeddable).
-            static bool IsBroken(string input)
-                => input.Contains('\'') || input.Contains('"');
+            // Identifiers containing quotes cannot be safely embedded in XPath attribute predicates.
+            static bool IsBroken(string input) => input.Contains('\'') || input.Contains('"');
 
-            // Use empty list if Path is null to avoid NRE; extension method assumes 'chain' itself is not null.
-            var nodes = chain.Path ?? [];
+            var nodes = chain?.Path ?? [];
+            var builder = new StringBuilder("/Desktop");
 
-            // Base of the locator always starts at Desktop.
-            var xpathBuilder = new StringBuilder("/Desktop");
-
-            // Tracks whether we skipped one or more intermediate nodes (causing '//' separator).
+            // Set to true when a UWP CoreWindow node is skipped; causes the next node to use '//'
+            // because UIA cannot step through the UWP layer with a single '/'.
             var isGap = false;
 
-            for (int i = 0; i < nodes.Count; i++)
+            foreach (var node in nodes)
             {
-                // Current node and whether it's the last in the chain.
-                var node = nodes[i];
-                var isLast = (i == nodes.Count - 1);
-
-                // Control type (fallback to '*' when unknown).
+                // Control type label, falling back to '*' when the type is unknown.
                 var control = node.ControlType ?? "*";
 
-                // Candidate identifiers.
-                var name = node.Name;
-                var automationId = node.AutomationId;
-
-                // Determine presence and validity of identifiers.
-                var hasName = !string.IsNullOrEmpty(name);
-                var hasAutomationId = !string.IsNullOrEmpty(automationId);
-                var isUwp = node
-                    .ClassName?
-                    .Equals("Windows.UI.Core.CoreWindow", StringComparison.OrdinalIgnoreCase) == true;
-
-                // Check if identifiers are "broken" (contain quotes).
-                var nameBroken = hasName && IsBroken(name);
-                var automationIdBroken = hasAutomationId && IsBroken(automationId);
-
-                // UWP apps have unreliable AutomationIds -> skip and mark gap.
+                // UWP CoreWindow elements are invisible to UIA — omit from the path but mark a gap
+                // so the following node uses '//' to bridge the unreachable UWP layer.
+                var isUwp = node.ClassName?.Equals("Windows.UI.Core.CoreWindow", StringComparison.OrdinalIgnoreCase) == true;
                 if (isUwp)
                 {
                     isGap = true;
                     continue;
                 }
 
-                // LAST node with no identifiers -> emit //ControlType and finish.
-                if (isLast && !hasName && !hasAutomationId)
-                {
-                    xpathBuilder.Append("//").Append(control);
-                    break;
-                }
-
-                // Intermediate node with no identifiers -> skip and mark gap.
-                if (!isLast && !hasName && !hasAutomationId)
-                {
-                    isGap = true;
-                    continue;
-                }
-
-                // Choose separator: '//' if a gap was recorded, otherwise '/'.
+                // '//' when bridging a UWP gap, '/' for every other step.
                 var separator = isGap ? "//" : "/";
                 isGap = false;
 
-                // Prefer AutomationId if present and safe.
-                if (hasAutomationId && !automationIdBroken)
-                {
-                    xpathBuilder
-                        .Append(separator)
-                        .Append(control)
-                        .Append($"[@AutomationId='{automationId}']");
-                }
-                // Else prefer Name if present and safe.
-                else if (hasName && !nameBroken)
-                {
-                    xpathBuilder
-                        .Append(separator)
-                        .Append(control)
-                        .Append($"[@Name='{name}']");
-                }
+                var automationId = node.AutomationId;
+                var name = node.Name;
 
-                // Otherwise, identifiers exist but are broken (contain quotes) -> emit placeholder.
+                var hasAutomationId = !string.IsNullOrEmpty(automationId) && !IsBroken(automationId);
+                var hasName = !string.IsNullOrEmpty(name) && !IsBroken(name);
+
+                if (hasAutomationId)
+                {
+                    // Strong identifier — use AutomationId predicate.
+                    builder.Append(separator).Append(control).Append($"[@AutomationId='{automationId}']");
+                }
+                else if (hasName)
+                {
+                    // Secondary identifier — use Name predicate.
+                    builder.Append(separator).Append(control).Append($"[@Name='{name}']");
+                }
                 else
                 {
-                    xpathBuilder
-                        .Append(separator)
-                        .Append(control)
-                        .Append($"[@Name='~BROKEN~']");
+                    // No usable identifier — disambiguate with 1-based index among same-ControlType siblings.
+                    builder.Append(separator).Append(control).Append($"[{node.SiblingIndexOfSameControlType}]");
                 }
             }
 
-            // Return the constructed XPath-like locator string.
-            return xpathBuilder.ToString();
+            return builder.ToString();
         }
 
         // Converts an IUIAutomationElement into a UiaNodeModel representation.
@@ -355,6 +322,60 @@ namespace UiaPeek.Domain.Extensions
 
             // Return an empty list if exceptions occurred.
             return list;
+        }
+
+        // Calculates 1-based sibling indexes for a UIA element among its parent's children.
+        // Walks siblings via RawViewWalker from the first child until the target is found.
+        // Returns (index among all siblings, index among siblings with the same ControlTypeId).
+        // Falls back to (1, 1) if enumeration fails or the target is not found.
+        private static (int All, int SameControlType) GetSiblingIndexes(
+            IUIAutomationTreeWalker walker,
+            CUIAutomation8 automation,
+            IUIAutomationElement parent,
+            IUIAutomationElement target,
+            int targetControlTypeId)
+        {
+            // Count predecessors (0-based); add 1 at the return point to produce 1-based XPath positions.
+            var allCount = 0;
+            var sameTypeCount = 0;
+
+            try
+            {
+                var child = Safe(() => walker.GetFirstChildElement(parent), fallback: null);
+
+                while (child != null)
+                {
+                    // Check whether this sibling is the target element.
+                    var isTarget = false;
+
+                    try
+                    {
+                        isTarget = automation.CompareElements(child, target) == 1;
+                    }
+                    catch (COMException) { }
+                    catch (InvalidComObjectException) { }
+
+                    if (isTarget)
+                    {
+                        break;
+                    }
+
+                    allCount++;
+
+                    if (Safe(() => child.CurrentControlType) == targetControlTypeId)
+                    {
+                        sameTypeCount++;
+                    }
+
+                    child = Safe(() => walker.GetNextSiblingElement(child), fallback: null);
+                }
+            }
+            catch (COMException) { }
+            catch (InvalidComObjectException) { }
+            catch (Exception) { }
+
+            // +1 converts predecessor count (0-based) to 1-based XPath sibling position.
+            return (allCount + 1, sameTypeCount + 1);
         }
 
         // Safely executes a function that retrieves a COM-related value,
