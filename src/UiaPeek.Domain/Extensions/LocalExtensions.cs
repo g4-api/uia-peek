@@ -194,6 +194,7 @@ namespace UiaPeek.Domain.Extensions
             static bool IsBroken(string input) => input.Contains('\'') || input.Contains('"');
         }
 
+        // TODO: Export all properties that can be safely retrieved from the element, such as IsContentElement, IsControlElement, IsEnabled, etc.
         // Converts an IUIAutomationElement into a UiaNodeModel representation.
         private static UiaNodeModel Convert(IUIAutomationElement element, bool metadata)
         {
@@ -346,13 +347,18 @@ namespace UiaPeek.Domain.Extensions
 
             try
             {
+                // Start with the first child of the parent element.
+                // If the parent has no children or retrieval fails, this will be null and the loop will be skipped.
                 var child = Safe(() => walker.GetFirstChildElement(parent), fallback: null);
 
+                // Walk through siblings until the target element is found, counting positions.
                 while (child != null)
                 {
                     // Check whether this sibling is the target element.
                     var isTarget = false;
 
+                    // CompareElements can throw if either element is stale or the provider
+                    // is buggy, so we catch exceptions and treat them as non-matches.
                     try
                     {
                         isTarget = automation.CompareElements(child, target) == 1;
@@ -360,18 +366,25 @@ namespace UiaPeek.Domain.Extensions
                     catch (COMException) { }
                     catch (InvalidComObjectException) { }
 
+                    // If this sibling is the target, stop counting; otherwise,
+                    // increment counts and move to the next sibling.
                     if (isTarget)
                     {
                         break;
                     }
 
+                    // Increment the count of all siblings encountered so far.
+                    // This count is used to determine the target's position among all siblings.
                     allCount++;
 
+                    // If this sibling shares the same ControlTypeId as the target, increment the same-type count.
                     if (Safe(() => child.CurrentControlType) == targetControlTypeId)
                     {
                         sameTypeCount++;
                     }
 
+                    // Move to the next sibling element, handling potential COM exceptions safely.
+                    // If retrieval fails, child will be set to null and the loop will exit.
                     child = Safe(() => walker.GetNextSiblingElement(child), fallback: null);
                 }
             }
