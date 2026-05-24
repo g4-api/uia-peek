@@ -215,6 +215,7 @@ namespace UiaPeek.PathFinder
         }
         #endregion
 
+        // TODO: Bug, xpath does not resolve as it supposed to while it resolves just fine in the driver using the same parser.
         #region *** Test Path    ***
         // Handles the Click event for the Test Path button.
         private void BtnTestPath_Click(object sender, RoutedEventArgs e)
