@@ -135,9 +135,6 @@ namespace UiaPeek.Domain.Extensions
         /// <returns>A deterministic locator string beginning with <c>/Desktop</c>.</returns>
         public static string ResolveLocator(this UiaChainModel chain)
         {
-            // Identifiers containing quotes cannot be safely embedded in XPath attribute predicates.
-            static bool IsBroken(string input) => input.Contains('\'') || input.Contains('"');
-
             // Extract the ancestor nodes from the chain, defaulting to an empty list if the chain is null.
             var nodes = chain?.Path ?? [];
             var builder = new StringBuilder("/Desktop");
@@ -192,6 +189,9 @@ namespace UiaPeek.Domain.Extensions
 
             // Return the constructed locator string.
             return builder.ToString();
+
+            // Identifiers containing quotes cannot be safely embedded in XPath attribute predicates.
+            static bool IsBroken(string input) => input.Contains('\'') || input.Contains('"');
         }
 
         // Converts an IUIAutomationElement into a UiaNodeModel representation.
