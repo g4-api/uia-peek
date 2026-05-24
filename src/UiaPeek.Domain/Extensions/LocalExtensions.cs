@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 
 using UiaPeek.Domain.Models;
 
@@ -135,9 +136,7 @@ namespace UiaPeek.Domain.Extensions
         /// <returns>A deterministic locator string beginning with <c>/Desktop</c>.</returns>
         public static string ResolveLocator(this UiaChainModel chain)
         {
-            // Identifiers containing quotes cannot be safely embedded in XPath attribute predicates.
-            static bool IsBroken(string input) => input.Contains('\'') || input.Contains('"');
-
+            // Extract the ancestor nodes from the chain, defaulting to an empty list if the chain is null.
             var nodes = chain?.Path ?? [];
             var builder = new StringBuilder("/Desktop");
 
@@ -163,9 +162,12 @@ namespace UiaPeek.Domain.Extensions
                 var separator = isGap ? "//" : "/";
                 isGap = false;
 
+                // Attempt to use AutomationId as the strongest available identifier, falling back to Name when safe,
+                // otherwise using a positional index among siblings of the same ControlType.
                 var automationId = node.AutomationId;
                 var name = node.Name;
 
+                // Identifiers that contain quotes cannot be used in XPath predicates and are considered broken.
                 var hasAutomationId = !string.IsNullOrEmpty(automationId) && !IsBroken(automationId);
                 var hasName = !string.IsNullOrEmpty(name) && !IsBroken(name);
 
@@ -186,9 +188,98 @@ namespace UiaPeek.Domain.Extensions
                 }
             }
 
+            // Return the constructed locator string.
             return builder.ToString();
+
+            // Identifiers containing quotes cannot be safely embedded in XPath attribute predicates.
+            static bool IsBroken(string input) => input.Contains('\'') || input.Contains('"');
         }
 
+        // TODO: Add support for other stable attributes such as ClassName when they can be safely used in XPath predicates.
+        /// <summary>
+        /// Builds a compact semantic XPath from the fallback UIA XPath.
+        /// </summary>
+        /// <param name="chain">The UIA chain model that contains the fallback locator.</param>
+        /// <returns>
+        /// A normalized XPath that starts from <c>/Desktop</c> and targets the final
+        /// element by a stable identity, or <c>null</c> when a safe normalized locator
+        /// cannot be generated.
+        /// </returns>
+        public static string FormatXpath(this UiaChainModel chain)
+        {
+            // Get the original full fallback XPath from the UIA chain.
+            var xpath = chain?.FallbackLocator;
+
+            // A valid fallback XPath must be present and must start from the root.
+            if (string.IsNullOrWhiteSpace(xpath) || !xpath.StartsWith('/'))
+            {
+                return null;
+            }
+
+            // Split the XPath into segments.
+            // The regex captures each XPath separator and the segment that follows it.
+            var matches = Regex.Matches(xpath, @"(/+)([^/]+)");
+
+            // A normalized locator needs at least a root segment and a target segment.
+            if (matches.Count < 2)
+            {
+                return null;
+            }
+
+            // Keep only the segment text.
+            // Example: "/Desktop/Window[1]/Button[@Name='OK']"
+            // becomes: "Desktop", "Window[1]", "Button[@Name='OK']".
+            var segments = matches
+                .Select(m => m.Groups[2].Value)
+                .ToArray();
+
+            // The final segment is the selected UIA element.
+            var finalSegment = segments[^1];
+
+            // The final element must have a stable identity.
+            // Index-only locators are intentionally rejected for normalized output.
+            if (!finalSegment.Contains("[@AutomationId=") && !finalSegment.Contains("[@Name="))
+            {
+                return null;
+            }
+
+            // Do not generate a normalized element locator when the selected target
+            // is itself a Window.
+            if (ControlType(finalSegment).Equals("Window", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            // Find the first Window ancestor before the final target segment.
+            // The target itself is excluded from this search.
+            var windowSegment = segments[..^1]
+                .FirstOrDefault(s => ControlType(s).Equals("Window", StringComparison.OrdinalIgnoreCase));
+
+            // If no Window ancestor exists, search from Desktop directly to the target.
+            if (windowSegment == null)
+            {
+                return $"/Desktop//{finalSegment}";
+            }
+
+            // Anchor the locator through the Window ancestor and then search below it
+            // for the final target element.
+            var result = $"/Desktop//{windowSegment}//{finalSegment}";
+
+            // Return null when normalization produced the same value as the fallback.
+            return result == xpath ? null : result;
+
+            // Gets the control type name from an XPath segment.
+            static string ControlType(string segment)
+            {
+                // The control type is stored before the first '[' character.
+                var idx = segment.IndexOf('[');
+
+                // If the segment has no predicate, the whole segment is the control type.
+                return idx < 0 ? segment : segment[..idx];
+            }
+        }
+
+        // TODO: Export all properties that can be safely retrieved from the element, such as IsContentElement, IsControlElement, IsEnabled, etc.
         // Converts an IUIAutomationElement into a UiaNodeModel representation.
         private static UiaNodeModel Convert(IUIAutomationElement element, bool metadata)
         {
@@ -341,13 +432,18 @@ namespace UiaPeek.Domain.Extensions
 
             try
             {
+                // Start with the first child of the parent element.
+                // If the parent has no children or retrieval fails, this will be null and the loop will be skipped.
                 var child = Safe(() => walker.GetFirstChildElement(parent), fallback: null);
 
+                // Walk through siblings until the target element is found, counting positions.
                 while (child != null)
                 {
                     // Check whether this sibling is the target element.
                     var isTarget = false;
 
+                    // CompareElements can throw if either element is stale or the provider
+                    // is buggy, so we catch exceptions and treat them as non-matches.
                     try
                     {
                         isTarget = automation.CompareElements(child, target) == 1;
@@ -355,18 +451,25 @@ namespace UiaPeek.Domain.Extensions
                     catch (COMException) { }
                     catch (InvalidComObjectException) { }
 
+                    // If this sibling is the target, stop counting; otherwise,
+                    // increment counts and move to the next sibling.
                     if (isTarget)
                     {
                         break;
                     }
 
+                    // Increment the count of all siblings encountered so far.
+                    // This count is used to determine the target's position among all siblings.
                     allCount++;
 
+                    // If this sibling shares the same ControlTypeId as the target, increment the same-type count.
                     if (Safe(() => child.CurrentControlType) == targetControlTypeId)
                     {
                         sameTypeCount++;
                     }
 
+                    // Move to the next sibling element, handling potential COM exceptions safely.
+                    // If retrieval fails, child will be set to null and the loop will exit.
                     child = Safe(() => walker.GetNextSiblingElement(child), fallback: null);
                 }
             }

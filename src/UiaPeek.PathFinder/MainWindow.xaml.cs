@@ -50,6 +50,52 @@ namespace UiaPeek.PathFinder
             InitializeComponent();
         }
 
+        #region *** Toggle Path  ***
+        /// <summary>
+        /// Handles the path toggle button click and swaps the visible path value
+        /// with the hidden path value.
+        /// </summary>
+        /// <param name="sender">The button that raised the click event.</param>
+        /// <param name="e">The routed event arguments for the click event.</param>
+        private void BtnTogglePath_Click(object sender, RoutedEventArgs e)
+        {
+            TogglePath();
+        }
+
+        /// <summary>
+        /// Handles the access key press for the path toggle button and swaps the
+        /// visible path value with the hidden path value.
+        /// </summary>
+        /// <param name="sender">The control that raised the access key event.</param>
+        /// <param name="e">The access key event arguments.</param>
+        private void BtnTogglePath_AccessKeyPressed(object sender, AccessKeyPressedEventArgs e)
+        {
+            TogglePath();
+        }
+
+        // Swaps the value displayed in the path text box with the value stored in
+        // the hidden label.
+        private void TogglePath()
+        {
+            Task.Run(() =>
+            {
+                // Marshal the UI update back to the WPF dispatcher thread because
+                // TxbPath and LblHidden are UI elements and must be accessed from it.
+                Dispatcher.BeginInvoke(() =>
+                {
+                    // Capture the current visible path before replacing it.
+                    var path = TxbPath.Text.Trim();
+
+                    // Move the hidden path value into the visible text box.
+                    TxbPath.Text = LblHidden?.Content?.ToString();
+
+                    // Store the previous visible path as the new hidden path value.
+                    LblHidden.Content = path;
+                });
+            });
+        }
+        #endregion
+
         #region *** Start/Stop   ***
         /// <summary>
         /// Handles the Click event for the Start/Stop button.
@@ -101,6 +147,7 @@ namespace UiaPeek.PathFinder
                         TxbPath.Text = xpath;
                         TxbAxisX.Text = point.X.ToString();
                         TxbAxisY.Text = point.Y.ToString();
+                        LblHidden.Content = chain.FallbackLocator;
                     });
 
                     // Delay the loop iteration to avoid excessive updates
@@ -168,6 +215,7 @@ namespace UiaPeek.PathFinder
         }
         #endregion
 
+        // TODO: Bug, xpath does not resolve as it supposed to while it resolves just fine in the driver using the same parser.
         #region *** Test Path    ***
         // Handles the Click event for the Test Path button.
         private void BtnTestPath_Click(object sender, RoutedEventArgs e)

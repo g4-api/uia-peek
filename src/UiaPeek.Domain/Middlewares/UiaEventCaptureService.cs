@@ -455,7 +455,7 @@ namespace UiaPeek.Domain.Middlewares
                 var clickMessage = new UiaEventModel
                 {
                     Chain = _repository.Peek(x: mouse.pt.X, y: mouse.pt.Y), // UI element at cursor position.
-                    Event = GetMouseEventName(eventRecord.WParam),         // Resolve readable event name.
+                    Event = GetMouseEventName(eventRecord.WParam),          // Resolve readable event name.
                     Timestamp = eventRecord.Timestamp,
                     Type = "Mouse",
                     Value = new
