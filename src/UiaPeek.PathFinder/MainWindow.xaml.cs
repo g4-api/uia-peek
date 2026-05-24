@@ -93,7 +93,7 @@ namespace UiaPeek.PathFinder
                     var chain = _domain.Peek(point.X, point.Y);
 
                     // Extract the XPath-like locator from the element chain
-                    var xpath = chain.Locator;
+                    var xpath = chain.FallbackLocator;
 
                     // Update the UI text box with the locator value on the UI thread
                     Dispatcher.BeginInvoke(() =>

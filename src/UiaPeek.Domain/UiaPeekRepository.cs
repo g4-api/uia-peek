@@ -26,7 +26,13 @@ namespace UiaPeek.Domain
             chain.Point = new RecorderPointModel { XPos = x, YPos = y };
 
             // Build the absolute XPath locator for the ancestor chain.
-            chain.Locator = chain.ResolveLocator();
+            chain.FallbackLocator = chain.ResolveLocator();
+            chain.Locator = chain.FormatXpath();
+
+            // If the formatted XPath locator is empty, fall back to the absolute locator.
+            chain.Locator = string.IsNullOrEmpty(chain.Locator)
+                ? chain.FallbackLocator
+                : chain.Locator;
 
             // Indicate that this chain was triggered by a hover action.
             chain.Trigger = "Hover";
@@ -49,10 +55,16 @@ namespace UiaPeek.Domain
             var chain = automation.NewAncestorChain(element) ?? new UiaChainModel();
 
             // Generate the absolute XPath locator for the ancestor chain.
-            chain.Locator = chain.ResolveLocator();
+            chain.FallbackLocator = chain.ResolveLocator();
+            chain.Locator = chain.FormatXpath();
 
             // Indicate that this chain was triggered by a focus action.
             chain.Trigger = "Focus";
+
+            // If the formatted XPath locator is empty, fall back to the absolute locator.
+            chain.Locator = string.IsNullOrEmpty(chain.Locator)
+                ? chain.FallbackLocator
+                : chain.Locator;
 
             // Return the ancestor chain model.
             return chain;

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 
 using UiaPeek.Domain.Models;
 
@@ -192,6 +193,206 @@ namespace UiaPeek.Domain.Extensions
 
             // Identifiers containing quotes cannot be safely embedded in XPath attribute predicates.
             static bool IsBroken(string input) => input.Contains('\'') || input.Contains('"');
+        }
+
+        /// <summary>
+        /// Builds a normalized XPath locator from the UIA chain fallback locator by removing
+        /// known structural wrapper segments while preserving the original locator semantics.
+        /// </summary>
+        /// <param name="chain">The UIA chain model that contains the fallback XPath locator.</param>
+        /// <returns>A normalized XPath when removable wrapper segments were found and safely removed; otherwise, <c>null</c>.</returns>
+        public static string FormatXpath(this UiaChainModel chain)
+        {
+            // Get the complete fallback XPath generated from the UIA chain.
+            var xpath = chain?.FallbackLocator;
+
+            // Guard against null, empty, whitespace, or non-absolute XPath values.
+            // A valid UIA XPath should start from the root using '/'.
+            if (string.IsNullOrWhiteSpace(xpath) || !xpath.StartsWith('/'))
+            {
+                return null;
+            }
+
+            // Split the XPath into ordered segments while preserving the separator
+            // that was used before each segment.
+            //
+            // Example:
+            // /Window[1]/Panel[1]//Button[@AutomationId='x']
+            //
+            // Captures:
+            // Sep="/"  Text="Window[1]"
+            // Sep="/"  Text="Panel[1]"
+            // Sep="//" Text="Button[@AutomationId='x']"
+            var matches = Regex.Matches(xpath, @"(/+)([^/]+)");
+
+            // A meaningful normalized locator needs at least a root segment and a target segment.
+            if (matches.Count < 2)
+            {
+                return null;
+            }
+
+            // Convert regex matches into a simple array so each segment can be inspected,
+            // marked as removable, and later rebuilt in the original order.
+            var segments = matches
+                .Select(m => (Sep: m.Groups[1].Value, Text: m.Groups[2].Value))
+                .ToArray();
+
+            // The last segment is the target element.
+            // It must never be removed, and it must be meaningful enough to justify
+            // generating a normalized locator.
+            if (!AssertMeaningfulSegment(segments[^1].Text))
+            {
+                return null;
+            }
+
+            // Track which intermediate segments can be removed.
+            // The first segment is preserved as the root boundary.
+            // The final segment is preserved as the target element.
+            var removable = new bool[segments.Length];
+
+            // Mark intermediate segments that represent known structural wrappers and can be safely removed.
+            for (var i = 1; i < segments.Length - 1; i++)
+            {
+                removable[i] = AssertRemovableWrapper(segments[i].Text);
+            }
+
+            // If no known wrapper segments were found, there is nothing to normalize.
+            if (!Array.Exists(removable, r => r))
+            {
+                return null;
+            }
+
+            // Rebuild the XPath by skipping removable segments and joining
+            // the kept segments with the appropriate separator.
+            var stringBuilder = new StringBuilder();
+
+            // Indicates that one or more segments were skipped.
+            // When true, the next kept segment must be connected using '//'
+            // because the direct parent-child relationship is no longer guaranteed.
+            var isGap = false;
+
+            for (var i = 0; i < segments.Length; i++)
+            {
+                // Skip removable wrapper segments and remember that a hierarchy gap exists.
+                if (removable[i])
+                {
+                    isGap = true;
+                    continue;
+                }
+
+                if (i == 0)
+                {
+                    // Always write the first/root segment with a single leading slash.
+                    stringBuilder.Append('/').Append(segments[i].Text);
+                }
+                else
+                {
+                    // Use descendant navigation when:
+                    // 1. one or more segments were skipped, or
+                    // 2. the original XPath already used descendant navigation.
+                    stringBuilder.Append(isGap || segments[i].Sep == "//" ? "//" : "/");
+                    stringBuilder.Append(segments[i].Text);
+
+                    // The gap has been consumed by the current kept segment.
+                    isGap = false;
+                }
+            }
+
+            // Get the final normalized XPath string.
+            // This may be the same as the original if no segments were removed, but that case is handled by an early return above.
+            var result = stringBuilder.ToString();
+
+            // Return null when normalization did not actually change the locator.
+            return result == xpath ? null : result;
+
+            // Determines whether the specified XPath segment represents a structural UIA wrapper
+            // that can be safely removed from a normalized locator.
+            static bool AssertRemovableWrapper(string segment)
+            {
+                // Find the start of the XPath predicate.
+                // Example: "Panel[1]" -> bracketIndex points to '['.
+                var bracketIndex = segment.IndexOf('[');
+
+                // Segments without predicates cannot be treated as index-only wrappers.
+                if (bracketIndex < 0)
+                {
+                    return false;
+                }
+
+                // Extract the control type before the predicate.
+                // Example: "Panel[1]" -> "Panel".
+                var controlType = segment[..bracketIndex];
+
+                // Extract the predicate content without the surrounding brackets.
+                // Example: "Panel[1]" -> "1".
+                var predicate = segment[(bracketIndex + 1)..^1];
+
+                // Windows 11 host/boundary wrapper.
+                // It is safe to remove only when it has no semantic predicate.
+                if (controlType.Equals("Windows.UI.Core.CoreWindow", StringComparison.OrdinalIgnoreCase))
+                {
+                    return AssertIndexOnly(predicate);
+                }
+
+                // Windows UIA structural wrappers.
+                // Pane is common on Windows 11; Panel can appear in Windows 10 paths,
+                // for example in Calculator as /Panel[i]/Panel[i].
+                if (controlType is "Pane" or "Panel")
+                {
+                    return AssertIndexOnly(predicate);
+                }
+
+                // Any other control type is not considered removable by this rule.
+                return false;
+            }
+
+            // Returns true when a segment qualifies as a meaningful locator target.
+            // A segment is meaningful when it carries an attribute predicate (@AutomationId, @Name, ...)
+            // or belongs to a clearly semantic UIA control type.
+            static bool AssertMeaningfulSegment(string segment)
+            {
+                // Known UIA control types that usually represent real interaction targets
+                // or meaningful UI content, even when they only have an index predicate.
+                var semanticControlTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "Button",
+                    "Edit",
+                    "Text",
+                    "MenuItem",
+                    "ListItem",
+                    "ComboBox",
+                    "CheckBox",
+                    "RadioButton",
+                    "TabItem",
+                    "Hyperlink",
+                    "DataItem",
+                    "TreeItem"
+                };
+
+                // Find the start of the XPath predicate.
+                // Example: "Button[@AutomationId='num7Button']" -> bracketIdx points to '['.
+                var bracketIdx = segment.IndexOf('[');
+
+                // Extract the control type.
+                // Example: "Button[@AutomationId='num7Button']" -> "Button".
+                // Example: "Button" -> "Button".
+                var controlType = bracketIdx < 0 ? segment : segment[..bracketIdx];
+
+                // Extract the predicate without the surrounding brackets.
+                // Example: "Button[@AutomationId='num7Button']" -> "@AutomationId='num7Button'".
+                // If there is no predicate, keep it as null.
+                var predicate = bracketIdx < 0 ? null : segment[(bracketIdx + 1)..^1];
+
+                // A segment is meaningful when it has an attribute-based predicate,
+                // for example @AutomationId, @Name, @ClassName, etc.
+                // It is also meaningful when its control type is one of the known
+                // semantic UIA control types listed above.
+                return (predicate != null && predicate.StartsWith('@'))
+                    || semanticControlTypes.Contains(controlType);
+            }
+
+            // Predicate is index-only (e.g. "1", "2") — contains no attribute selector.
+            static bool AssertIndexOnly(string predicate) => int.TryParse(predicate, out _);
         }
 
         // TODO: Export all properties that can be safely retrieved from the element, such as IsContentElement, IsControlElement, IsEnabled, etc.

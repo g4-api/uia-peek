@@ -12,7 +12,9 @@ namespace UiaPeek.Domain.Models
     /// </summary>
     public class UiaChainModel : ChainModel<UiaNodeModel>
     {
-        // Intentionally empty — provides a domain-specific type for UIA chains.
-        // Add members here if UIA chains require additional metadata or logic.
+        /// <summary>
+        /// Gets or sets a fallback locator string for the trigger element.
+        /// </summary>
+        public string FallbackLocator { get; set; } = string.Empty;
     }
 }
