@@ -138,6 +138,7 @@ namespace UiaPeek.Domain.Extensions
             // Identifiers containing quotes cannot be safely embedded in XPath attribute predicates.
             static bool IsBroken(string input) => input.Contains('\'') || input.Contains('"');
 
+            // Extract the ancestor nodes from the chain, defaulting to an empty list if the chain is null.
             var nodes = chain?.Path ?? [];
             var builder = new StringBuilder("/Desktop");
 
@@ -163,9 +164,12 @@ namespace UiaPeek.Domain.Extensions
                 var separator = isGap ? "//" : "/";
                 isGap = false;
 
+                // Attempt to use AutomationId as the strongest available identifier, falling back to Name when safe,
+                // otherwise using a positional index among siblings of the same ControlType.
                 var automationId = node.AutomationId;
                 var name = node.Name;
 
+                // Identifiers that contain quotes cannot be used in XPath predicates and are considered broken.
                 var hasAutomationId = !string.IsNullOrEmpty(automationId) && !IsBroken(automationId);
                 var hasName = !string.IsNullOrEmpty(name) && !IsBroken(name);
 
@@ -186,6 +190,7 @@ namespace UiaPeek.Domain.Extensions
                 }
             }
 
+            // Return the constructed locator string.
             return builder.ToString();
         }
 
