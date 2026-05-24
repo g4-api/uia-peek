@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 using Common.Domain.Extensions;
@@ -10,6 +11,7 @@ namespace Common.Domain.Models
     /// </summary>
     public class RecorderNodeModel<T>
     {
+        #region *** Properties   ***
         /// <summary>
         /// The automation-specific identifier assigned to the element (AutomationId).
         /// </summary>
@@ -77,10 +79,17 @@ namespace Common.Domain.Models
         public int ProcessId { get; set; }
 
         /// <summary>
+        /// Gets or sets a collection of key-value pairs representing additional properties.
+        /// </summary>
+        public Dictionary<string, object> Properties { get; set; }
+
+        /// <summary>
         /// The runtime identifier assigned by UIA to uniquely identify the element.
         /// </summary>
         public int[] RuntimeId { get; set; }
+        #endregion
 
+        #region *** Nested Types ***
         /// <summary>
         /// Represents the bounding rectangle of a UI element in screen coordinates.
         /// </summary>
@@ -140,5 +149,6 @@ namespace Common.Domain.Models
             /// </summary>
             public string Name { get; set; }
         }
+        #endregion
     }
 }
