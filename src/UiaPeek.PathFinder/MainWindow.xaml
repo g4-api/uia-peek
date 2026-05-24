@@ -53,6 +53,18 @@
                 AccessKeyManager.AccessKeyPressed="BtnTestPath_AccessKeyPressed"
                 Cursor="Hand"/>
 
+        <Button Content="_Toggle Path"
+                HorizontalAlignment="Left"
+                Margin="235,162,0,0"
+                VerticalAlignment="Top"
+                RenderTransformOrigin="-0.57,1.481"
+                Height="30"
+                Width="70"
+                Name="BtnTogglePath"
+                Click="BtnTogglePath_Click"
+                AccessKeyManager.AccessKeyPressed="BtnTogglePath_AccessKeyPressed"
+                Cursor="Hand"/>
+
         <Label Content="Idle"
                HorizontalAlignment="Left"
                Margin="11,133,0,0"
@@ -129,5 +141,12 @@
                 Click="BtnSetPosition_Click"
                 AccessKeyManager.AccessKeyPressed="BtnSetPosition_AccessKeyPressed"
                 Cursor="Hand"/>
+
+        <Label Content=""
+               HorizontalAlignment="Left"
+               Margin="350,238,0,0"
+               Name="LblHidden"
+               VerticalAlignment="Top"
+               Visibility="Hidden"/>
     </Grid>
 </Window>
