@@ -128,8 +128,8 @@ namespace UiaPeek.Domain.Extensions
         /// <summary>
         /// Builds a deterministic UIA XPath-like locator string from a <see cref="UiaChainModel"/>.
         /// Every ancestor node is included in the path using a single <c>/</c> separator.
-        /// Nodes are identified by <c>AutomationId</c> or <c>Name</c> when safe, otherwise by
-        /// a 1-based sibling index among nodes of the same <c>ControlType</c>.
+        /// Nodes are identified by <c>Name</c> when safe, falling back to <c>AutomationId</c>,
+        /// otherwise by a 1-based sibling index among nodes of the same <c>ControlType</c>.
         /// UWP <c>Windows.UI.Core.CoreWindow</c> nodes are omitted because UIA cannot resolve them.
         /// </summary>
         /// <param name="chain">The chain containing the ordered UIA ancestor nodes.</param>
@@ -162,7 +162,7 @@ namespace UiaPeek.Domain.Extensions
                 var separator = isGap ? "//" : "/";
                 isGap = false;
 
-                // Attempt to use AutomationId as the strongest available identifier, falling back to Name when safe,
+                // Attempt to use Name as the strongest available identifier, falling back to AutomationId when safe,
                 // otherwise using a positional index among siblings of the same ControlType.
                 var automationId = node.AutomationId;
                 var name = node.Name;
@@ -171,15 +171,15 @@ namespace UiaPeek.Domain.Extensions
                 var hasAutomationId = !string.IsNullOrEmpty(automationId) && !IsBroken(automationId);
                 var hasName = !string.IsNullOrEmpty(name) && !IsBroken(name);
 
-                if (hasAutomationId)
+                if (hasName)
                 {
-                    // Strong identifier — use AutomationId predicate.
-                    builder.Append(separator).Append(control).Append($"[@AutomationId='{automationId}']");
-                }
-                else if (hasName)
-                {
-                    // Secondary identifier — use Name predicate.
+                    // Strong identifier — use Name predicate.
                     builder.Append(separator).Append(control).Append($"[@Name='{name}']");
+                }
+                else if (hasAutomationId)
+                {
+                    // Secondary identifier — use AutomationId predicate.
+                    builder.Append(separator).Append(control).Append($"[@AutomationId='{automationId}']");
                 }
                 else
                 {

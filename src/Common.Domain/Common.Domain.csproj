@@ -18,7 +18,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="CommandBridge" Version="2025.2.26.62" />
-		<PackageReference Include="G4.Extensions" Version="2026.4.29.65" />
+		<PackageReference Include="G4.Extensions" Version="2026.6.23.69" />
 	</ItemGroup>
 
 </Project>
