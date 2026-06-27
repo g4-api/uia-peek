@@ -171,15 +171,15 @@ namespace UiaPeek.Domain.Extensions
                 var hasAutomationId = !string.IsNullOrEmpty(automationId) && !IsBroken(automationId);
                 var hasName = !string.IsNullOrEmpty(name) && !IsBroken(name);
 
-                if (hasAutomationId)
+                if (hasName)
                 {
-                    // Strong identifier — use AutomationId predicate.
-                    builder.Append(separator).Append(control).Append($"[@AutomationId='{automationId}']");
-                }
-                else if (hasName)
-                {
-                    // Secondary identifier — use Name predicate.
+                    // Strong identifier — use Name predicate.
                     builder.Append(separator).Append(control).Append($"[@Name='{name}']");
+                }
+                else if (hasAutomationId)
+                {
+                    // Secondary identifier — use AutomationId predicate.
+                    builder.Append(separator).Append(control).Append($"[@AutomationId='{automationId}']");
                 }
                 else
                 {
