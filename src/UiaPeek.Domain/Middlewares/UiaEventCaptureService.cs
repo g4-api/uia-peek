@@ -783,6 +783,22 @@ namespace UiaPeek.Domain.Middlewares
                                 _logger.LogDebug("Ignored event with unsupported type: {Type}", eventRecord.EventType);
                             }
                         }
+                        catch (UnauthorizedAccessException e)
+                        {
+                            // E_ACCESSDENIED (0x80070005): the target window runs at a higher
+                            // integrity level. Skip it; run elevated / uiAccess to resolve these.
+                            _logger.LogWarning(e,
+                                "Skipped event; access denied to a higher-privilege UI element. Type: {Type}, Timestamp: {Ts}",
+                                eventRecord.EventType, eventRecord.Timestamp);
+                        }
+                        catch (COMException e) when ((uint)e.HResult == 0x80040201)
+                        {
+                            // Transient UIA failure: the target provider couldn't service the
+                            // request (window closing/redrawing). Expected during live tracking; skip it.
+                            _logger.LogDebug(e,
+                                "Skipped event; UI Automation could not resolve the element (transient). Type: {Type}, Timestamp: {Ts}",
+                                eventRecord.EventType, eventRecord.Timestamp);
+                        }
                         catch (Exception e)
                         {
                             // Per-event fault isolation so one bad item doesn't kill the loop.
