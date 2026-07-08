@@ -876,7 +876,7 @@ function onReconnecting() {
  * is awaited by the message router (which returns true and replies on completion) so the
  * worker stays alive through both sends even on a cold start.
  *
- * @param {object} message The recording-event message ({ recordingEvent, frameContext }).
+ * @param {object} message The recording-event message ({ recordingEvent, frameContext, isFrameSwitchTrigger }).
  * @param {object} sender The message sender metadata.
  * @returns {Promise<void>} Resolves once the events have been recorded.
  */
@@ -897,14 +897,23 @@ async function onRecordingEventMessage(message, sender) {
         : undefined;
     const frameId = sender.frameId || 0;
 
-    // Emit a SwitchFrame / SwitchParentFrame first when the interaction moved frames. The
-    // switch inherits the interaction's timestamp so it sorts immediately before it.
-    await emitFrameSwitchIfChanged({
-        tabId,
-        frameId,
-        frameContext: message.frameContext,
-        triggerTimestamp: message.recordingEvent.timestamp
-    });
+    // Only genuine in-frame user gestures (clicks/scroll) may change the active frame and emit a
+    // SwitchFrame. Commit events like SendKeys (from `change`) and SubmitForm (from `submit`) can
+    // fire in a background or mirror frame the user never interacted with — for example a
+    // duplicate search form in a same-origin sub-frame — so they must not trigger a frame switch.
+    // Default to true so any event lacking the hint keeps the previous behavior.
+    const isFrameSwitchTrigger = message.isFrameSwitchTrigger !== false;
+
+    // Emit a SwitchFrame / SwitchParentFrame first when a gesture moved frames. The switch
+    // inherits the interaction's timestamp so it sorts immediately before it.
+    if (isFrameSwitchTrigger) {
+        await emitFrameSwitchIfChanged({
+            tabId,
+            frameId,
+            frameContext: message.frameContext,
+            triggerTimestamp: message.recordingEvent.timestamp
+        });
+    }
 
     // Record the interaction itself.
     await addRecordingEvent(message.recordingEvent);

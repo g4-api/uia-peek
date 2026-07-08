@@ -114,7 +114,8 @@
      * settings, so the caller can simply skip it.
      *
      * @param {Event} domEvent The DOM event being recorded.
-     * @returns {object|null} The recording event in contract shape, or null to skip.
+     * @returns {object|null} An object with the recording event and its frame-switch hint
+     *   ({ recordingEvent, isFrameSwitchTrigger }), or null to skip.
      */
     function newRecordingEventFromDom(domEvent) {
         // Resolve the contract descriptor; unknown events yield null and are ignored.
@@ -149,7 +150,7 @@
         });
 
         // Assemble the top-level event, stamping the page host and capture time.
-        return contract.newRecordingEvent({
+        const recordingEvent = contract.newRecordingEvent({
             chain,
             event: descriptor.event,
             machineName: document.location.hostname,
@@ -157,6 +158,16 @@
             type: descriptor.type,
             value: descriptor.value
         });
+
+        // Return the event with the catalog's frame-switch hint. The worker uses it so only
+        // genuine in-frame gestures (clicks/scroll) change the active frame; commit events
+        // (SendKeys from `change`, SubmitForm from `submit`) can fire in a background or mirror
+        // frame and must not trigger a SwitchFrame. Default to a trigger unless the descriptor
+        // opts out, so any future event keeps switching unless it declares otherwise.
+        return {
+            recordingEvent,
+            isFrameSwitchTrigger: descriptor.isFrameSwitchTrigger !== false
+        };
     }
 
     /**
@@ -206,20 +217,21 @@
         }
 
         // Build the recording event; skip when the catalog declines to describe it.
-        const recordingEvent = newRecordingEventFromDom(domEvent);
+        const recording = newRecordingEventFromDom(domEvent);
 
-        if (!recordingEvent) {
+        if (!recording) {
             return;
         }
 
-        // Forward the event to the background worker along with this frame's context, so
-        // the worker can emit a SwitchFrame before the interaction when the active frame
-        // changes. Ignore "no receiver" rejections that occur when the worker is briefly
-        // asleep between events.
+        // Forward the event to the background worker along with this frame's context and the
+        // frame-switch hint, so the worker emits a SwitchFrame before the interaction only when a
+        // genuine in-frame gesture moved to a different frame. Ignore "no receiver" rejections
+        // that occur when the worker is briefly asleep between events.
         const recordingMessage = {
             channel: MESSAGE_CHANNELS.recordingEvent,
-            recordingEvent,
-            frameContext: getFrameContext()
+            recordingEvent: recording.recordingEvent,
+            frameContext: getFrameContext(),
+            isFrameSwitchTrigger: recording.isFrameSwitchTrigger
         };
 
         chrome.runtime.sendMessage(recordingMessage).catch(() => {

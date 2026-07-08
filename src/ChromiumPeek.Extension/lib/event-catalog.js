@@ -195,6 +195,8 @@
         return {
             type: EVENT_TYPES.mouse,
             event: eventNamesByType[domEvent.type] || "InvokeClick",
+            // A click is a genuine in-frame gesture, so it may drive a frame switch.
+            isFrameSwitchTrigger: true,
             value: {
                 button: domEvent.button,
                 X: Math.round(domEvent.clientX || 0),
@@ -264,6 +266,8 @@
         return {
             type: EVENT_TYPES.mouse,
             event: "InvokeScroll",
+            // A wheel scroll is a genuine in-frame gesture, so it may drive a frame switch.
+            isFrameSwitchTrigger: true,
             value: {
                 direction,
                 notches,
@@ -306,6 +310,10 @@
         return {
             type: EVENT_TYPES.keyboard,
             event: "SendKeys",
+            // SendKeys is derived from `change`, which commits on blur and can fire in a
+            // background or mirror frame the user never interacted with (for example a duplicate
+            // search form in a same-origin sub-frame). It must not drive a frame switch.
+            isFrameSwitchTrigger: false,
             value
         };
     }
@@ -370,6 +378,9 @@
         return {
             type: EVENT_TYPES.form,
             event: "SubmitForm",
+            // SubmitForm is derived from `submit`, which can fire in a background or mirror form
+            // frame the user never interacted with, so it must not drive a frame switch.
+            isFrameSwitchTrigger: false,
             value: {
                 formId,
                 formName
