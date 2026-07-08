@@ -1,0 +1,43 @@
+/**
+ * Global theme parameters for the G4 Chromium Recorder extension UI.
+ *
+ * Palette matched to the main G4 UI (designer-blueprint-parameters-g4.css): electric-blue
+ * accents (#00B4FF / #0077B6) on near-black surfaces (#0A0A14 / #11111C) with light-gray
+ * text (#B8CCD8). The theme is always dark, mirroring the G4 designer, so there is no
+ * light/dark media override.
+ *
+ * This file contains CSS custom properties only.
+ */
+:root {
+  --theme-font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --theme-title-font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --theme-monospace-font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+
+  /* Near-black surfaces: page = G4 primary-color, panels = G4 surface-color. */
+  --theme-surface-background: #0a0a14;
+  --theme-surface-foreground: #b8ccd8;
+  --theme-panel-background: #11111c;
+  --theme-muted-foreground: #607080;
+  --theme-border-color: #0077b6;
+
+  /* Electric-blue accent (G4 electric-blue), dark text on it, dim blue on hover. */
+  --theme-accent-background: #00b4ff;
+  --theme-accent-foreground: #0a0a14;
+  --theme-accent-hover-background: #0077b6;
+
+  /* Status colors from the G4 palette (green / yellow / red). */
+  --theme-status-connected: #00e676;
+  --theme-status-reconnecting: #ffb300;
+  --theme-status-disconnected: #ff3d3d;
+
+  --theme-hover-background: #1a1a2a;
+  --theme-focus-color: #00b4ff;
+
+  /* Sharp corners throughout, matching the G4 designer (border-radius 0). */
+  --theme-border-radius-small: 0;
+  --theme-border-radius-medium: 0;
+  /* Subtle electric-blue glow, matching the G4 designer's accent shadows. */
+  --theme-shadow-medium: 0 0 12px rgb(0 180 255 / 15%);
+  /* Focus ring glow used by themed inputs. */
+  --theme-focus-glow: 0 0 0 3px rgb(0 180 255 / 25%);
+}

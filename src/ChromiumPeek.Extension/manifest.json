@@ -1,28 +1,55 @@
 {
-	"manifest_version": 3,
-	"name": "ChromiumPeek Recorder",
-	"version": "0.0.1",
-	"description": "Test extension for ChromiumPeek.",
-	"action": {
-		"default_popup": "user-interface/popup.html",
-		"default_title": "ChromiumPeek"
-	},
-	"permissions": [
-		"scripting",
-		"activeTab"
-	],
-	"host_permissions": [
-		"http://localhost:9956/*"
-	],
-	"background": {
-		"service_worker": "js/background.js",
-		"type": "module"
-	},
-	"content_scripts": [
-		{
-			"matches": [ "<all_urls>" ],
-			"js": [ "js/content-script.js" ],
-			"run_at": "document_idle"
-		}
-	]
+    "manifest_version": 3,
+    "name": "G4 Chromium Recorder",
+    "version": "0.1.0",
+    "description": "Records browser interactions and streams them to the G4 ChromiumPeek hub using the UiaPeek recorder contract.",
+    "icons": {
+        "16": "icons/icon-16.png",
+        "32": "icons/icon-32.png",
+        "48": "icons/icon-48.png",
+        "128": "icons/icon-128.png"
+    },
+    "action": {
+        "default_popup": "components/popup/popup.html",
+        "default_title": "G4 Chromium Recorder",
+        "default_icon": {
+            "16": "icons/icon-16.png",
+            "32": "icons/icon-32.png",
+            "48": "icons/icon-48.png",
+            "128": "icons/icon-128.png"
+        }
+    },
+    "options_ui": {
+        "page": "components/options/options.html",
+        "open_in_tab": true
+    },
+    "permissions": [
+        "storage",
+        "scripting",
+        "activeTab",
+        "webNavigation"
+    ],
+    "host_permissions": [
+        "http://localhost:9956/*",
+        "ws://localhost:9956/*"
+    ],
+    "background": {
+        "service_worker": "js/background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [ "<all_urls>" ],
+            "all_frames": true,
+            "run_at": "document_idle",
+            "js": [
+                "lib/constants.js",
+                "lib/settings-store.js",
+                "lib/recorder-contract.js",
+                "lib/dom-locator.js",
+                "lib/dom-mapper.js",
+                "lib/event-catalog.js",
+                "js/content-script.js"
+            ]
+        }
+    ]
 }

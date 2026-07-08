@@ -1,0 +1,31 @@
+/**
+ * Popup parameters for the G4 Chromium Recorder extension.
+ *
+ * Maps popup-specific variables onto the global theme tokens so the popup visual file
+ * never hard-codes a colour or effect. This file contains CSS custom properties only.
+ */
+:root {
+  --recorder-popup-background: var(--theme-surface-background);
+  --recorder-popup-foreground: var(--theme-surface-foreground);
+  --recorder-popup-panel-background: var(--theme-panel-background);
+  --recorder-popup-muted-foreground: var(--theme-muted-foreground);
+  --recorder-popup-border: 1px solid var(--theme-border-color);
+  --recorder-popup-border-radius: var(--theme-border-radius-medium);
+  --recorder-popup-row-radius: var(--theme-border-radius-small);
+  --recorder-popup-font-family: var(--theme-font-family);
+  --recorder-popup-title-font-family: var(--theme-title-font-family);
+  --recorder-popup-monospace-font-family: var(--theme-monospace-font-family);
+
+  --recorder-popup-button-background: var(--theme-accent-background);
+  --recorder-popup-button-foreground: var(--theme-accent-foreground);
+  --recorder-popup-button-hover-background: var(--theme-accent-hover-background);
+  --recorder-popup-secondary-button-background: var(--theme-panel-background);
+  --recorder-popup-secondary-button-foreground: var(--theme-surface-foreground);
+
+  --recorder-popup-row-hover-background: var(--theme-hover-background);
+  --recorder-popup-focus-outline: 2px solid var(--theme-focus-color);
+
+  --recorder-popup-status-connected: var(--theme-status-connected);
+  --recorder-popup-status-reconnecting: var(--theme-status-reconnecting);
+  --recorder-popup-status-disconnected: var(--theme-status-disconnected);
+}

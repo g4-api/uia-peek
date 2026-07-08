@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>G4 Chromium Recorder Settings</title>
+
+  <link rel="stylesheet" href="../../css/fonts.css">
+  <link rel="stylesheet" href="../../css/theme.parameters.css">
+  <link rel="stylesheet" href="../form-controls/form-controls.parameters.css">
+  <link rel="stylesheet" href="../form-controls/form-controls.layout.css">
+  <link rel="stylesheet" href="../form-controls/form-controls.visual.css">
+  <link rel="stylesheet" href="options.parameters.css">
+  <link rel="stylesheet" href="options.layout.css">
+  <link rel="stylesheet" href="options.visual.css">
+</head>
+
+<body>
+  <main class="recorder-options"
+        data-test-id="recorder-options-root"
+        aria-label="G4 Chromium Recorder settings">
+    <h1 class="recorder-options__title">
+      G4 Chromium Recorder Settings
+    </h1>
+
+    <form id="recorder-settings-form"
+          data-test-id="recorder-settings-form">
+      <section class="recorder-options__section"
+               data-test-id="connection-settings-section"
+               aria-label="Connection settings">
+        <h2 class="recorder-options__section-title">
+          Connection
+        </h2>
+
+        <div class="recorder-options__field">
+          <label class="recorder-options__label" for="hub-url-input">
+            Hub URL
+          </label>
+          <input type="url"
+                 id="hub-url-input"
+                 class="recorder-options__input"
+                 data-test-id="hub-url-input"
+                 aria-describedby="hub-url-hint"
+                 placeholder="http://localhost:9956/hub/v4/g4/peek">
+          <span id="hub-url-hint"
+                class="recorder-options__hint"
+                data-test-id="hub-url-hint">
+            The SignalR hub the recorder pushes events to. Changing host or port may
+            require updating the extension host permissions.
+          </span>
+        </div>
+
+        <div class="recorder-options__control-row">
+          <button type="button"
+                  id="auto-connect-switch"
+                  class="switch"
+                  data-test-id="auto-connect-switch"
+                  aria-checked="false"
+                  role="switch">
+            <span class="switch__track">
+              <span class="switch__knob"></span>
+            </span>
+            <span class="switch__label">Connect automatically when the browser starts</span>
+          </button>
+        </div>
+
+        <div class="recorder-options__field">
+          <label class="recorder-options__label" for="reconnect-delays-input">
+            Reconnect delays (milliseconds, comma separated)
+          </label>
+          <input type="text"
+                 id="reconnect-delays-input"
+                 class="recorder-options__input"
+                 data-test-id="reconnect-delays-input"
+                 aria-describedby="reconnect-delays-hint"
+                 placeholder="0, 2000, 5000, 10000, 30000">
+          <span id="reconnect-delays-hint"
+                class="recorder-options__hint"
+                data-test-id="reconnect-delays-hint">
+            Backoff used by automatic reconnect after a dropped connection.
+          </span>
+        </div>
+      </section>
+
+      <section class="recorder-options__section"
+               data-test-id="capture-settings-section"
+               aria-label="Capture settings">
+        <h2 class="recorder-options__section-title">
+          Capture
+        </h2>
+
+        <div class="recorder-options__control-row">
+          <button type="button"
+                  id="redact-passwords-switch"
+                  class="switch"
+                  data-test-id="redact-passwords-switch"
+                  aria-checked="false"
+                  role="switch">
+            <span class="switch__track">
+              <span class="switch__knob"></span>
+            </span>
+            <span class="switch__label">Redact values typed into password and sensitive fields</span>
+          </button>
+        </div>
+
+        <div class="recorder-options__field">
+          <label class="recorder-options__label" for="max-stack-size-input">
+            Maximum events kept per session
+          </label>
+          <div id="max-stack-size-field"
+               class="number-field"
+               data-test-id="max-stack-size-field">
+            <input type="number"
+                   id="max-stack-size-input"
+                   class="number-field__input"
+                   data-test-id="max-stack-size-input"
+                   aria-describedby="max-stack-size-hint"
+                   max="5000"
+                   min="1">
+            <span class="number-field__spin">
+              <button type="button"
+                      class="number-field__step number-field__step--up"
+                      data-test-id="max-stack-size-step-up"
+                      aria-label="Increase maximum events"
+                      tabindex="-1">
+                &#9650;
+              </button>
+              <button type="button"
+                      class="number-field__step number-field__step--down"
+                      data-test-id="max-stack-size-step-down"
+                      aria-label="Decrease maximum events"
+                      tabindex="-1">
+                &#9660;
+              </button>
+            </span>
+          </div>
+          <span id="max-stack-size-hint"
+                class="recorder-options__hint"
+                data-test-id="max-stack-size-hint">
+            The popup keeps at most this many recent events for the current session.
+          </span>
+        </div>
+
+        <fieldset class="recorder-options__field recorder-options__events-fieldset"
+                  data-test-id="enabled-events-fieldset">
+          <legend class="recorder-options__label">
+            Events to capture
+          </legend>
+
+          <div class="recorder-options__events-grid"
+               data-test-id="enabled-events-grid">
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-click"
+                      class="switch"
+                      data-test-id="event-toggle-click"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Click</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Fires on any single click. Keep on for most flows.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-doubleClick"
+                      class="switch"
+                      data-test-id="event-toggle-double-click"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Double Click</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Fires on a double-click. Off if you only need single clicks.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-contextMenu"
+                      class="switch"
+                      data-test-id="event-toggle-context-menu"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Context Click</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Fires on a right-click / context menu.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-change"
+                      class="switch"
+                      data-test-id="event-toggle-change"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Typing</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Captures typed text when a field loses focus. Off to skip form values.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-submit"
+                      class="switch"
+                      data-test-id="event-toggle-submit"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Submit</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Fires when a form is submitted.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-wheel"
+                      class="switch"
+                      data-test-id="event-toggle-wheel"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Scroll (off by default)</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Mouse-wheel scrolling. Very noisy &mdash; leave off unless you need it.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-navigation"
+                      class="switch"
+                      data-test-id="event-toggle-navigation"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Navigation</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Typed URL, refresh, and back/forward navigations.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-switchFrame"
+                      class="switch"
+                      data-test-id="event-toggle-switch-frame"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Enter Frame</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Fires when an interaction moves into an iframe.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-switchParentFrame"
+                      class="switch"
+                      data-test-id="event-toggle-switch-parent-frame"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Exit To Parent</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Fires when returning from an iframe to the parent page.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-switchWindow"
+                      class="switch"
+                      data-test-id="event-toggle-switch-window"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Tab Switch</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Fires when the active browser tab changes.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-closeWindow"
+                      class="switch"
+                      data-test-id="event-toggle-close-window"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Tab Close</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Fires when a tab is closed.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-input"
+                      class="switch"
+                      data-test-id="event-toggle-input"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Input (deferred)</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Per-keystroke input &mdash; not recorded yet (planned).
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-keyDown"
+                      class="switch"
+                      data-test-id="event-toggle-key-down"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Key Down (deferred)</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Single key-down &mdash; not recorded yet (planned).
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-keyUp"
+                      class="switch"
+                      data-test-id="event-toggle-key-up"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Key Up (deferred)</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Single key-up &mdash; not recorded yet (planned).
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-keyCombination"
+                      class="switch"
+                      data-test-id="event-toggle-key-combination"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Key Combination (deferred)</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Ctrl/Alt/Cmd + key shortcuts &mdash; not recorded yet (planned).
+              </span>
+            </div>
+          </div>
+        </fieldset>
+      </section>
+
+      <section class="recorder-options__actions"
+               data-test-id="settings-actions-section"
+               aria-label="Settings actions">
+        <button type="submit"
+                id="save-settings-button"
+                class="recorder-options__button"
+                title="Save settings"
+                data-test-id="save-settings-button">
+          Save
+        </button>
+
+        <button type="button"
+                id="reset-defaults-button"
+                class="recorder-options__button recorder-options__button--secondary"
+                title="Reset all settings to defaults"
+                data-test-id="reset-defaults-button">
+          Reset to defaults
+        </button>
+
+        <span id="settings-status-message"
+              class="recorder-options__status-message"
+              data-test-id="settings-status-message"
+              aria-live="polite"></span>
+      </section>
+    </form>
+  </main>
+
+  <script src="../../lib/constants.js"></script>
+  <script src="../../lib/settings-store.js"></script>
+  <script src="../form-controls/form-controls.js"></script>
+  <script src="options.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,32 @@
+/**
+ * Options parameters for the G4 Chromium Recorder extension.
+ *
+ * Maps options-page variables onto the global theme tokens so the options visual file
+ * never hard-codes a colour or effect. This file contains CSS custom properties only.
+ */
+:root {
+  --recorder-options-background: var(--theme-surface-background);
+  --recorder-options-foreground: var(--theme-surface-foreground);
+  --recorder-options-panel-background: var(--theme-panel-background);
+  --recorder-options-muted-foreground: var(--theme-muted-foreground);
+  --recorder-options-border: 1px solid var(--theme-border-color);
+  --recorder-options-border-radius: var(--theme-border-radius-medium);
+  --recorder-options-control-radius: var(--theme-border-radius-small);
+  --recorder-options-font-family: var(--theme-font-family);
+  --recorder-options-title-font-family: var(--theme-title-font-family);
+
+  --recorder-options-input-background: var(--theme-panel-background);
+  --recorder-options-input-border: 1px solid var(--theme-border-color);
+  --recorder-options-input-focus-border-color: var(--theme-focus-color);
+  --recorder-options-input-focus-glow: var(--theme-focus-glow);
+
+  --recorder-options-button-background: var(--theme-accent-background);
+  --recorder-options-button-foreground: var(--theme-accent-foreground);
+  --recorder-options-button-hover-background: var(--theme-accent-hover-background);
+  --recorder-options-secondary-button-background: var(--theme-panel-background);
+  --recorder-options-secondary-button-foreground: var(--theme-surface-foreground);
+
+  --recorder-options-focus-outline: 2px solid var(--theme-focus-color);
+  --recorder-options-status-foreground: var(--theme-status-connected);
+  --recorder-options-shadow: var(--theme-shadow-medium);
+}

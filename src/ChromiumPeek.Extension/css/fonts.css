@@ -1,0 +1,24 @@
+/**
+ * Self-hosted fonts for the G4 Chromium Recorder extension UI.
+ *
+ * Inter (body/UI) and Space Grotesk (titles), matching the main G4 UI. The variable TTFs
+ * are bundled under ../fonts so the extension stays fully offline. Extension pages load
+ * their own packaged resources, so no web_accessible_resources entry is required.
+ *
+ * This file contains @font-face declarations only.
+ */
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/Inter-variable.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("../fonts/space-grotesk-variable.ttf") format("truetype");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}

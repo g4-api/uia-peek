@@ -5,7 +5,6 @@ using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
 using Common.Domain.Models;
-using UiaPeek.Domain;
 using ChromiumPeek.Domain.Models;
 
 namespace ChromiumPeek.Domain.Hubs
@@ -15,13 +14,13 @@ namespace ChromiumPeek.Domain.Hubs
     /// Provides real-time communication for heartbeat checks and
     /// ancestor chain inspection at specific screen coordinates.
     /// </summary>
-    public class ChromiumPeekHub(IChromiumPeekRepository repository) : Hub
+    public class ChromiumPeekHub(IChromiumPeekDomain domain) : Hub
     {
         // Collection of active recording sessions keyed by a unique session id.
         private readonly static ConcurrentDictionary<string, ConcurrentBag<ChromiumChainModel>> s_sessions = new();
 
-        // Repository used for querying UIA elements at coordinates.
-        private readonly IChromiumPeekRepository _repository = repository;
+        // Domain aggregate exposing the repository used for querying UIA elements at coordinates.
+        private readonly IChromiumPeekDomain _domain = domain;
 
         // Sends a heartbeat message to the caller.
         // This can be used by clients to verify the connection is alive.
@@ -40,7 +39,7 @@ namespace ChromiumPeek.Domain.Hubs
         public Task SendPeek(RecorderPointModel point)
         {
             // Query the repository to get the UIA ancestor chain at the given coordinates.
-            var peekResponse = _repository.Peek(x: point.XPos, y: point.YPos);
+            var peekResponse = _domain.Repository.Peek(x: point.XPos, y: point.YPos);
 
             // Send the result back to the calling client.
             return Clients.Caller.SendAsync(
@@ -54,7 +53,7 @@ namespace ChromiumPeek.Domain.Hubs
         public Task SendPeek()
         {
             // Query the repository to get the UIA ancestor chain from the currently focused element.
-            var peekResponse = _repository.Peek();
+            var peekResponse = _domain.Repository.Peek();
 
             // Send the result back to the calling client.
             return Clients.Caller.SendAsync(
@@ -92,6 +91,20 @@ namespace ChromiumPeek.Domain.Hubs
             return Clients.Caller.SendAsync(
                 method: "RecordingSessionStopped",
                 arg1: new HubResponseModel(chains));
+        }
+
+        // Relays a recording event pushed by a producer (for example, the Chromium
+        // recorder extension) to every connected consumer. The browser extension cannot
+        // host a socket, so it connects as a client and invokes this method; the hub
+        // re-broadcasts the event using the same "ReceiveRecordingEvent" message and
+        // envelope as the desktop capture service, preserving the UiaPeek contract.
+        [HubMethodName(name: nameof(SendRecordingEvent))]
+        public Task SendRecordingEvent(ChromiumEventModel recordingEvent)
+        {
+            // Fan the event out to all clients wrapped in the standard response envelope.
+            return Clients.All.SendAsync(
+                method: "ReceiveRecordingEvent",
+                arg1: new HubResponseModel(recordingEvent));
         }
 
         /// <summary>

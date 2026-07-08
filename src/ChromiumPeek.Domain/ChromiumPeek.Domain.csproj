@@ -20,11 +20,11 @@
 		<ProjectReference Include="..\Common.Domain\Common.Domain.csproj" />
 	</ItemGroup>
 
-	<ItemGroup>
-		<Content Include="..\ChromiumPeek.Extension\**\*.*">
-			<Link>ChromiumExtension\%(RecursiveDir)%(FileName)%(Extension)</Link>
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Content>
-	</ItemGroup>
+	<!--
+		The Chromium recorder extension is now owned by the ChromiumPeek host project
+		(src\ChromiumPeek\ChromiumExtension), which copies it to its own output. The old
+		copy rule that pulled src\ChromiumPeek.Extension into the output was removed so
+		there is a single source of truth and stale files cannot overwrite the new ones.
+	-->
 
 </Project>
