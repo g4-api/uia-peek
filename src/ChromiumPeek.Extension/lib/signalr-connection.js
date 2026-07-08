@@ -21,8 +21,9 @@
     // Create or reuse the single extension namespace shared across every context.
     const namespace = globalScope.g4Recorder = globalScope.g4Recorder || {};
 
-    // Pull the hub method names so invocations stay in sync with the server contract.
-    const { HUB_METHOD_NAMES } = namespace.constants;
+    // Pull the hub method names and server-to-client message names so invocations and inbound
+    // handlers stay in sync with the server contract.
+    const { HUB_METHOD_NAMES, SERVER_CLOSE_BROWSER_NAME } = namespace.constants;
 
     // Human-readable connection states surfaced to the rest of the extension. These are
     // independent of the SignalR client's internal enum so the UI has stable labels.
@@ -48,6 +49,7 @@
      * @param {() => void} options.onConnected Called when the socket becomes connected.
      * @param {() => void} options.onReconnecting Called when the client starts reconnecting.
      * @param {() => void} options.onDisconnected Called when the socket closes for good.
+     * @param {() => void} [options.onCloseBrowser] Called when the hub asks the extension to close the browser.
      * @returns {object} The connection handle.
      */
     function newRecorderConnection(options) {
@@ -56,7 +58,8 @@
             reconnectDelaysMilliseconds,
             onConnected,
             onReconnecting,
-            onDisconnected
+            onDisconnected,
+            onCloseBrowser
         } = options;
 
         // The official client is exposed as a global by the vendored UMD build. Fail
@@ -104,6 +107,13 @@
 
             onDisconnected();
         });
+
+        // Register the server-initiated close handler so the hub can ask the extension to close
+        // the browser during a graceful stop. Registered once here; the official client keeps
+        // "on" handlers across automatic reconnects, so it survives transient drops.
+        if (onCloseBrowser) {
+            hubConnection.on(SERVER_CLOSE_BROWSER_NAME, onCloseBrowser);
+        }
 
         /**
          * Returns the current human-readable connection state.

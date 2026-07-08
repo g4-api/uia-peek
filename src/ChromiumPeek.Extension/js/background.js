@@ -186,7 +186,8 @@ async function connectWithSettings() {
         reconnectDelaysMilliseconds: currentSettings.reconnectDelaysMilliseconds,
         onConnected: onConnected,
         onReconnecting: onReconnecting,
-        onDisconnected: onDisconnected
+        onDisconnected: onDisconnected,
+        onCloseBrowser: onCloseBrowserRequested
     });
 
     // Attempt the connection; report status first so the UI shows "connecting", and let
@@ -741,6 +742,25 @@ function newSwitchWindowEvent(options) {
             index
         }
     });
+}
+
+/**
+ * Handles a hub request to close the browser during a graceful stop.
+ *
+ * @remarks
+ * Owns a browser side effect. The hub sends this message from StopRecorder before it forces
+ * a process kill; closing every window quits Chromium because each recorder launch runs in
+ * its own dedicated user-data directory, so no unrelated windows are affected. Closing
+ * cleanly lets the launcher avoid killing a process tree that Chromium's subprocesses escape.
+ *
+ * @returns {Promise<void>} Resolves once a close has been requested for every window.
+ */
+async function onCloseBrowserRequested() {
+    // Enumerate the open browser windows; default to an empty list so a missing result is safe.
+    const browserWindows = await chrome.windows.getAll() || [];
+
+    // Request closing each window in parallel; the browser exits once the last one closes.
+    await Promise.all(browserWindows.map((browserWindow) => chrome.windows.remove(browserWindow.id)));
 }
 
 /**

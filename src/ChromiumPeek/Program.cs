@@ -1,5 +1,6 @@
 using ChromiumPeek.Domain;
 using ChromiumPeek.Domain.Hubs;
+using ChromiumPeek.Domain.Middlewares;
 
 using CommandBridge;
 
@@ -213,6 +214,10 @@ builder.Services.AddTransient<IChromiumPeekRepository, ChromiumPeekRepository>()
 // only browsers this service started) persists across requests.
 builder.Services.AddSingleton<IChromiumPeekLauncher, ChromiumPeekLauncher>();
 
+// Register the event capture service as a singleton (stateless; owns the broadcast of recorder
+// events pushed by the extension, mirroring the desktop UIA capture service's broadcast).
+builder.Services.AddSingleton<IChromiumEventCaptureService, ChromiumEventCaptureService>();
+
 // Register the domain aggregate as a transient facade over the launcher and repository, so
 // consumers inject a single IChromiumPeekDomain instead of each service individually.
 builder.Services.AddTransient<IChromiumPeekDomain, ChromiumPeekDomain>();
@@ -256,8 +261,9 @@ app.MapControllers();
 app.MapHub<ChromiumPeekHub>($"/hub/v4/g4/peek").RequireCors("CorsPolicy");
 #endregion
 
-// The browser is now launched on demand by the client via the Peek controller
-// (POST /api/v4/g4/peek), so there is no automatic startup launch here.
+// The browser is launched and stopped on demand by the client over SignalR, by invoking
+// the ChromiumPeekHub StartRecorder/StopRecorder methods on the /hub/v4/g4/peek hub, so
+// there is no automatic startup launch and no REST control endpoint here.
 
 // Start the application and wait for it to finish.
 await app.RunAsync();

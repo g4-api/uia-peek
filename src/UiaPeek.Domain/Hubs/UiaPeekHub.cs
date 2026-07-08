@@ -1,7 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 
-using System;
-using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
 using UiaPeek.Domain.Models;
@@ -17,9 +15,6 @@ namespace UiaPeek.Domain.Hubs
     /// </summary>
     public class UiaPeekHub(IUiaPeekRepository repository) : Hub
     {
-        // Collection of active recording sessions keyed by a unique session id.
-        private readonly static ConcurrentDictionary<string, ConcurrentBag<UiaChainModel>> s_sessions = new();
-
         // Repository used for querying UIA elements at coordinates.
         private readonly IUiaPeekRepository _repository = repository;
 
@@ -60,38 +55,6 @@ namespace UiaPeek.Domain.Hubs
             return Clients.Caller.SendAsync(
                 method: "ReceivePeek",
                 arg1: new HubResponseModel(peekResponse));
-        }
-
-        // Starts a new recording session for the current SignalR caller.
-        [HubMethodName(name: $"{nameof(StartRecordingSession)}")]
-        public Task StartRecordingSession()
-        {
-            // Generate a unique identifier for this caller's recording session.
-            var session = Guid.NewGuid().ToString();
-
-            // Initialize storage for this session's recorded events/actions.
-            // Assumes `_sessions` is a (thread-safe) dictionary keyed by session id.
-            s_sessions[session] = [];
-
-            // Notify ONLY the invoking client that the session has started and
-            // return the session id as the payload. The client should listen to
-            // "RecordingSessionStarted" and extract the `Value` field.
-            return Clients.Caller.SendAsync(
-                method: "RecordingSessionStarted",
-                arg1: new HubResponseModel(session));
-        }
-
-        // Stops an existing recording session for the current SignalR caller.
-        [HubMethodName(name: $"{nameof(StopRecordingSession)}")]
-        public Task StopRecordingSession(string session)
-        {
-            // Remove the session from the active sessions collection.
-            s_sessions.TryRemove(session, out var chains);
-
-            // Notify ONLY the invoking client that the session has stopped.
-            return Clients.Caller.SendAsync(
-                method: "RecordingSessionStopped",
-                arg1: new HubResponseModel(chains));
         }
 
         /// <summary>

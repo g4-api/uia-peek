@@ -27,14 +27,16 @@
     // Names of the hub methods the extension invokes on the server. These must match
     // the C# ChromiumPeekHub method names exactly (case-insensitive on the wire).
     const HUB_METHOD_NAMES = {
-        sendRecordingEvent: "SendRecordingEvent",
-        startRecordingSession: "StartRecordingSession",
-        stopRecordingSession: "StopRecordingSession"
+        sendRecordingEvent: "SendRecordingEvent"
     };
 
     // Name of the server-to-client broadcast. The extension does not consume it, but
     // it is documented here so the contract with consumer clients stays discoverable.
     const SERVER_BROADCAST_NAME = "ReceiveRecordingEvent";
+
+    // Name of the server-to-client message the hub sends to ask this extension to close its
+    // browser windows for a graceful stop. Must match ChromiumPeekHub.CloseBrowserClientMethod.
+    const SERVER_CLOSE_BROWSER_NAME = "CloseBrowser";
 
     // Runtime message channel names used with chrome.runtime messaging. Every message
     // exchanged between the content scripts, popup, options page, and background worker
@@ -101,6 +103,7 @@
         HUB_METHOD_NAMES,
         MESSAGE_CHANNELS,
         SERVER_BROADCAST_NAME,
+        SERVER_CLOSE_BROWSER_NAME,
         SETTINGS_STORAGE_KEY
     });
 })(globalThis);

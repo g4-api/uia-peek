@@ -1,5 +1,7 @@
 using ChromiumPeek.Domain.Models;
 
+using System.Threading.Tasks;
+
 namespace ChromiumPeek.Domain
 {
     /// <summary>
@@ -17,10 +19,12 @@ namespace ChromiumPeek.Domain
         int Start(DriverParametersModel driverParameters);
 
         /// <summary>
-        /// Stops a browser previously started by this launcher, killing the whole process tree.
+        /// Stops a browser previously started by this launcher. First asks the recorder
+        /// extension to close the browser so Chromium shuts down cleanly, then forces a
+        /// process-tree kill if the browser is still alive after a short grace period.
         /// </summary>
         /// <param name="processId">The process id returned by <see cref="Start"/>.</param>
         /// <returns><c>true</c> if a tracked process was stopped; <c>false</c> if the id is unknown.</returns>
-        bool Stop(int processId);
+        Task<bool> StopAsync(int processId);
     }
 }
