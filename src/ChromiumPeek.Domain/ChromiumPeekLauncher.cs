@@ -1,12 +1,17 @@
 using ChromiumPeek.Domain.Hubs;
 using ChromiumPeek.Domain.Models;
 
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.SignalR;
 
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -18,12 +23,10 @@ namespace ChromiumPeek.Domain
     /// Registered as a singleton so the process registry persists across requests.
     /// </summary>
     /// <param name="hubContext">Hub context used to ask the recorder extension to close the browser.</param>
-    public class ChromiumPeekLauncher(IHubContext<ChromiumPeekHub> hubContext) : IChromiumPeekLauncher
+    /// <param name="server">Server accessor used to resolve this server's own listening origin.</param>
+    public class ChromiumPeekLauncher(IHubContext<ChromiumPeekHub> hubContext, IServer server) : IChromiumPeekLauncher
     {
         #region *** Constants ***
-        // Fixed DevTools remote debugging port applied to every launch.
-        private const int RemoteDebuggingPort = 9222;
-
         // Folder name (under the app base directory) that holds the recorder extension.
         private const string ExtensionFolderName = "ChromiumPeek.Extension";
 
@@ -41,6 +44,11 @@ namespace ChromiumPeek.Domain
 
         // Hub context used to push the CloseBrowser message to the connected recorder extension.
         private readonly IHubContext<ChromiumPeekHub> _hubContext = hubContext;
+
+        // Server accessor used to resolve this server's own listening origin, which is injected
+        // into each launched browser (via the bootstrap page) so its recorder extension connects
+        // back to the exact server that launched it.
+        private readonly IServer _server = server;
         #endregion
 
         #region *** Methods   ***
@@ -77,7 +85,10 @@ namespace ChromiumPeek.Domain
                 CreateNoWindow = false
             };
 
-            startInfo.ArgumentList.Add($"--remote-debugging-port={RemoteDebuggingPort}");
+            // Use a per-launch free port so multiple recorder browsers can run at once without
+            // colliding on a shared DevTools port.
+            var remoteDebuggingPort = GetFreeTcpPort();
+            startInfo.ArgumentList.Add($"--remote-debugging-port={remoteDebuggingPort}");
             startInfo.ArgumentList.Add($"--load-extension={extensionDirectory}");
             startInfo.ArgumentList.Add("--no-first-run");
             startInfo.ArgumentList.Add("--no-default-browser-check");
@@ -112,6 +123,17 @@ namespace ChromiumPeek.Domain
 
                 Directory.CreateDirectory(userDataDirectory);
                 startInfo.ArgumentList.Add($"--user-data-dir={userDataDirectory}");
+            }
+
+            // Open this server's own bootstrap page as the initial tab. Its content script reports
+            // this origin's hub to the recorder extension, so the freshly launched browser connects
+            // back to the exact server that launched it rather than the extension's default hub. A
+            // positional (non-flag) argument is treated by Chromium as a URL to open.
+            var bootstrapUrl = ResolveServerBootstrapUrl();
+
+            if (!string.IsNullOrEmpty(bootstrapUrl))
+            {
+                startInfo.ArgumentList.Add(bootstrapUrl);
             }
 
             // Launch the browser.
@@ -205,6 +227,62 @@ namespace ChromiumPeek.Domain
             {
                 // The grace period elapsed before the process exited.
                 return false;
+            }
+        }
+
+        // Resolves this server's own bootstrap page URL from its listening addresses, normalizing a
+        // wildcard host (0.0.0.0, [::], +, *) to localhost so the launched browser can reach it.
+        // Returns null when no usable address is available, in which case no initial page is opened.
+        private string ResolveServerBootstrapUrl()
+        {
+            var addresses = _server.Features.Get<IServerAddressesFeature>()?.Addresses;
+
+            if (addresses == null)
+            {
+                return null;
+            }
+
+            // Prefer an http address; the browser and hub communicate over http/ws on loopback.
+            var address = addresses.FirstOrDefault(a => a.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                ?? addresses.FirstOrDefault();
+
+            if (string.IsNullOrEmpty(address))
+            {
+                return null;
+            }
+
+            // Replace wildcard host tokens that a browser cannot reach with localhost.
+            var normalized = address
+                .Replace("://+", "://localhost")
+                .Replace("://*", "://localhost")
+                .Replace("://0.0.0.0", "://localhost")
+                .Replace("://[::]", "://localhost");
+
+            if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+
+            // Build the bootstrap page URL served from wwwroot on the same origin.
+            var builder = new UriBuilder(uri.Scheme, uri.Host, uri.Port, "/recorder-bootstrap.html");
+
+            return builder.Uri.ToString();
+        }
+
+        // Picks an available loopback TCP port by binding to port 0 and reading the assigned port,
+        // so each launch gets its own DevTools port and simultaneous browsers do not collide.
+        private static int GetFreeTcpPort()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+
+            try
+            {
+                return ((IPEndPoint)listener.LocalEndpoint).Port;
+            }
+            finally
+            {
+                listener.Stop();
             }
         }
         #endregion

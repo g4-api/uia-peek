@@ -38,6 +38,15 @@
     // browser windows for a graceful stop. Must match ChromiumPeekHub.CloseBrowserClientMethod.
     const SERVER_CLOSE_BROWSER_NAME = "CloseBrowser";
 
+    // The hub path appended to a server origin to form a full hub URL. Used when the launcher's
+    // bootstrap page reports which server this freshly launched browser must connect to.
+    const SERVER_HUB_PATH = "/hub/v4/g4/peek";
+
+    // The <meta> name that marks the launcher's bootstrap page. When the content script sees this
+    // marker it reports the page origin's hub to the background worker instead of recording, so an
+    // auto-launched browser connects back to the exact server that launched it.
+    const BOOTSTRAP_META_NAME = "g4-recorder-bootstrap";
+
     // Runtime message channel names used with chrome.runtime messaging. Every message
     // exchanged between the content scripts, popup, options page, and background worker
     // uses one of these stable identifiers as its `channel` field.
@@ -47,7 +56,10 @@
         statusChanged: "g4-recorder/status-changed",
         clearStack: "g4-recorder/clear-stack",
         reconnect: "g4-recorder/reconnect",
-        settingsChanged: "g4-recorder/settings-changed"
+        settingsChanged: "g4-recorder/settings-changed",
+        // Sent by the content script from the launcher's bootstrap page to tell the worker which
+        // hub this launched browser must connect to (the launching server's origin + hub path).
+        setHub: "g4-recorder/set-hub"
     };
 
     // Logical event-type buckets carried in the `type` field of a recording event.
@@ -103,6 +115,7 @@
     // Expose the constants on the shared namespace as a frozen object so no consumer
     // can accidentally mutate cross-context configuration at runtime.
     namespace.constants = Object.freeze({
+        BOOTSTRAP_META_NAME,
         DEFAULT_HUB_URL,
         DEFAULT_SETTINGS,
         EVENT_TYPES,
@@ -110,6 +123,7 @@
         MESSAGE_CHANNELS,
         SERVER_BROADCAST_NAME,
         SERVER_CLOSE_BROWSER_NAME,
+        SERVER_HUB_PATH,
         SETTINGS_STORAGE_KEY
     });
 })(globalThis);

@@ -652,6 +652,44 @@
     }
 
     /**
+     * Reports the recorder hub to the background worker when this is the launcher's bootstrap page.
+     *
+     * @remarks
+     * The launcher opens each freshly launched browser on its own server origin, marked with the
+     * bootstrap <meta>. Recognizing that marker here lets the worker connect back to the exact
+     * server that launched this browser (derived from this page's origin), instead of the default
+     * hub. Only the top document is considered, and the page itself is never recorded.
+     *
+     * @returns {boolean} True when this was the bootstrap page (so recording must be skipped).
+     */
+    function tryReportBootstrapHub() {
+        // Only the top document can be the bootstrap page; sub-frames never carry the marker.
+        if (globalScope.window !== globalScope.window.top) {
+            return false;
+        }
+
+        // The marker <meta> identifies the launcher's bootstrap page.
+        const marker = document.querySelector(`meta[name="${constants.BOOTSTRAP_META_NAME}"]`);
+
+        if (!marker) {
+            return false;
+        }
+
+        // The hub lives at this server's origin; the launcher opened this page on the server that
+        // should receive this browser's events.
+        const hubUrl = globalScope.location.origin + constants.SERVER_HUB_PATH;
+
+        chrome.runtime.sendMessage({
+            channel: MESSAGE_CHANNELS.setHub,
+            hubUrl: hubUrl
+        }).catch(() => {
+            // The worker will respawn and re-read the persisted hub; nothing to do here.
+        });
+
+        return true;
+    }
+
+    /**
      * Initializes the content script: load settings, watch changes, then bind listeners.
      *
      * @remarks
@@ -661,6 +699,12 @@
      * @returns {Promise<void>} Resolves once listeners are bound.
      */
     async function initializeContentScript() {
+        // On the launcher's bootstrap page, report the hub and skip recording entirely so the
+        // bootstrap tab never produces events.
+        if (tryReportBootstrapHub()) {
+            return;
+        }
+
         // Load the initial settings into the cache used by the synchronous handlers.
         activeSettings = await settings.getSettings();
 

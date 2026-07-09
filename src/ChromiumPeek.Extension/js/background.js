@@ -97,6 +97,13 @@ const ACTIVE_FRAME_KEY_PREFIX = "g4Recorder/activeFrame/";
 // CloseWindow report the same index G4 uses. Persisted so indices survive worker restarts.
 const WINDOW_HANDLES_KEY = "g4Recorder/windowHandles";
 
+// Storage.session key holding the hub URL injected by the launcher's bootstrap page. It is kept
+// in session storage (not sync) so it survives service-worker restarts within this browser session
+// but is cleared when the browser closes, keeping the launched profile clean. When present it
+// overrides the stored/default hub so an auto-launched browser connects to the server that
+// launched it.
+const INJECTED_HUB_KEY = "g4Recorder/injectedHubUrl";
+
 // In-memory copy of the window-handle list (the source of truth during a worker lifetime)
 // and a load-once promise. Reads are synchronous against this array to avoid storage races
 // between the close (onRemoved) and re-activation (onActivated) handlers.
@@ -176,13 +183,17 @@ async function connectWithSettings() {
     // Tear down any previous connection so we never run two sockets at once.
     await stopConnection();
 
-    // Load the effective settings that define the hub URL and reconnect behaviour.
+    // Load the effective settings that define the reconnect behaviour and toggles.
     currentSettings = await settings.getSettings();
+
+    // Resolve the hub URL, preferring one injected by the launcher's bootstrap page so an
+    // auto-launched browser connects to the server that launched it, not the stored/default hub.
+    const hubUrl = await getEffectiveHubUrl();
 
     // Build a connection wired to the worker's lifecycle callbacks so session handling
     // happens in one place regardless of how the connection state changes.
     recorderConnection = connection.newRecorderConnection({
-        hubUrl: currentSettings.hubUrl,
+        hubUrl: hubUrl,
         reconnectDelaysMilliseconds: currentSettings.reconnectDelaysMilliseconds,
         onConnected: onConnected,
         onReconnecting: onReconnecting,
@@ -200,6 +211,65 @@ async function connectWithSettings() {
         console.error("[g4-recorder] hub connection failed:", error);
 
         sendStatusToListeners();
+    }
+}
+
+/**
+ * Resolves the hub URL the connection should use.
+ *
+ * @remarks
+ * Compute-only over storage. A hub injected by the launcher's bootstrap page (persisted in
+ * session storage) takes precedence so an auto-launched browser connects back to the server that
+ * launched it; otherwise the user-configured/default hub from settings is used, which keeps the
+ * options page working for a manually installed extension.
+ *
+ * @returns {Promise<string>} The effective hub URL.
+ */
+async function getEffectiveHubUrl() {
+    // Prefer the launcher-injected hub when present.
+    try {
+        const stored = await chrome.storage.session.get(INJECTED_HUB_KEY);
+        const injectedHubUrl = stored ? stored[INJECTED_HUB_KEY] : null;
+
+        if (typeof injectedHubUrl === "string" && injectedHubUrl.length > 0) {
+            return injectedHubUrl;
+        }
+    } catch (error) {
+        // Session storage may be briefly unavailable; fall through to the settings hub.
+    }
+
+    // Fall back to the settings hub (stored value or default), loading settings if needed.
+    const effectiveSettings = currentSettings || await settings.getSettings();
+
+    return effectiveSettings.hubUrl;
+}
+
+/**
+ * Handles a bootstrap-page request to point this browser at a specific hub.
+ *
+ * @remarks
+ * Owns the injected-hub state. Persists the hub in session storage so it survives worker restarts
+ * for this browser session, then reconnects when it differs from the current target so the switch
+ * from the default hub to the launching server's hub takes effect immediately.
+ *
+ * @param {string} hubUrl The hub URL derived from the bootstrap page's origin.
+ * @returns {Promise<void>} Resolves once the hub is persisted and any reconnect has started.
+ */
+async function onSetHubRequested(hubUrl) {
+    // Ignore an empty or malformed value so a bad message cannot clear a good hub.
+    if (typeof hubUrl !== "string" || hubUrl.length === 0) {
+        return;
+    }
+
+    // Determine the current target before persisting so we only reconnect on a real change.
+    const currentHubUrl = await getEffectiveHubUrl();
+
+    await chrome.storage.session.set({ [INJECTED_HUB_KEY]: hubUrl });
+
+    // Reconnect only when the target actually changed (for example the first bootstrap after the
+    // startup auto-connect to the default hub).
+    if (currentHubUrl !== hubUrl) {
+        connectWithSettings();
     }
 }
 
@@ -1007,6 +1077,20 @@ function onRuntimeMessage(message, sender, sendResponse) {
         sendStatusToListeners();
 
         return false;
+    }
+
+    // The launcher's bootstrap page reported which hub this launched browser must use. Persist it
+    // and reconnect asynchronously; returning true keeps the worker alive through the reconnect.
+    if (message.channel === MESSAGE_CHANNELS.setHub) {
+        onSetHubRequested(message.hubUrl)
+            .then(() => sendResponse({ isHubSet: true }))
+            .catch((error) => {
+                console.error("[g4-recorder] failed to set hub:", error);
+
+                sendResponse({ isHubSet: false });
+            });
+
+        return true;
     }
 
     // A page asked to reconnect, usually after changing the hub URL in settings.
