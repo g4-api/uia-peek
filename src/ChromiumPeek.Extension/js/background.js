@@ -756,11 +756,46 @@ function newSwitchWindowEvent(options) {
  * @returns {Promise<void>} Resolves once a close has been requested for every window.
  */
 async function onCloseBrowserRequested() {
-    // Enumerate the open browser windows; default to an empty list so a missing result is safe.
-    const browserWindows = await chrome.windows.getAll() || [];
+    // Log receipt so it is visible in the service-worker console whether the hub's CloseBrowser
+    // broadcast actually reached this extension (an MV3 worker suspended during an idle gap drops
+    // the socket, and the message is then never delivered).
+    console.log("[g4-recorder] CloseBrowser received; closing browser windows.");
 
-    // Request closing each window in parallel; the browser exits once the last one closes.
-    await Promise.all(browserWindows.map((browserWindow) => chrome.windows.remove(browserWindow.id)));
+    try {
+        // Enumerate the open browser windows; default to an empty list so a missing result is safe.
+        const browserWindows = await chrome.windows.getAll() || [];
+
+        console.log(`[g4-recorder] Closing ${browserWindows.length} window(s).`);
+
+        // Request closing each window; the browser exits once the last one closes. Each removal is
+        // isolated so one window that refuses to close (for example a page blocking unload) cannot
+        // abort closing the others, and any failure is surfaced instead of silently swallowed.
+        await Promise.all(browserWindows.map(async (browserWindow) => {
+            try {
+                await chrome.windows.remove(browserWindow.id);
+            } catch (error) {
+                console.error(`[g4-recorder] Failed to close window ${browserWindow.id}:`, error);
+            }
+        }));
+
+        // As a fallback, close any remaining tabs directly; this covers windows that survived the
+        // window-level removal so the browser can still quit when the last tab is gone.
+        const remainingTabs = await chrome.tabs.query({}) || [];
+
+        if (remainingTabs.length > 0) {
+            console.warn(`[g4-recorder] ${remainingTabs.length} tab(s) still open; removing them directly.`);
+
+            const remainingTabIds = remainingTabs
+                .map((tab) => tab.id)
+                .filter((tabId) => typeof tabId === "number");
+
+            await chrome.tabs.remove(remainingTabIds).catch((error) => {
+                console.error("[g4-recorder] Failed to remove remaining tabs:", error);
+            });
+        }
+    } catch (error) {
+        console.error("[g4-recorder] onCloseBrowserRequested failed:", error);
+    }
 }
 
 /**

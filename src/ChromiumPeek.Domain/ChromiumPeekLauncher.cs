@@ -133,49 +133,60 @@ namespace ChromiumPeek.Domain
         /// <inheritdoc />
         public async Task<bool> StopAsync(int processId)
         {
-            // Only processes this launcher started may be stopped; unknown ids are rejected.
-            if (!_startedProcesses.TryRemove(processId, out var process))
-            {
-                return false;
-            }
+            // Best-effort removal from the registry. The originally launched Chromium process
+            // frequently exits on its own because Chromium relaunches the browser into a separate
+            // process, so an absent or already-exited entry must NOT short-circuit the graceful
+            // close below — doing so was why the extension never received the close request and the
+            // still-running browser stayed open.
+            _startedProcesses.TryRemove(processId, out var process);
 
+            // Ask the recorder extension to close the browser, regardless of the launched process's
+            // state. The extension closes its own windows, which quits Chromium because each launch
+            // uses a dedicated user-data directory; this is what actually stops the browser when the
+            // launched process id has already exited. The message is broadcast; with a single
+            // recorder browser per host only the intended instance is listening.
             try
             {
-                // The browser may have already closed on its own; report it as not-stopped
-                // instead of pretending we killed a process that was no longer running.
-                if (process.HasExited)
-                {
-                    return false;
-                }
-
-                // Ask the recorder extension to close the browser so Chromium shuts down cleanly.
-                // A graceful close is preferred because Chromium spawns renderer/GPU/utility
-                // processes that reparent out of the launched process's tree and can survive
-                // Kill(entireProcessTree). The message is broadcast; with a single recorder browser
-                // per launch only the intended instance is listening.
                 await _hubContext.Clients.All.SendAsync(ChromiumPeekHub.CloseBrowserClientMethod);
+            }
+            catch
+            {
+                // No connected extension to receive the close (for example it disconnected); the
+                // force-kill fallback below still applies when we hold a live launched process.
+            }
 
-                // Give the browser a short grace period to exit on its own after the close request.
-                var isExited = await TryWaitForExitAsync(process, TimeSpan.FromSeconds(GracefulCloseTimeoutSeconds));
-
-                // Force a process-tree kill only when the graceful close did not take effect (for
-                // example the extension was disconnected or asleep), so stop is always reliable.
-                if (!isExited)
+            // Force-kill the process tree only when the launched process is still alive and the
+            // graceful close did not take effect (for example the extension was disconnected or
+            // asleep). When the launched process already exited, the browser runs under processes we
+            // no longer track, so the graceful close above is the mechanism that stops it.
+            if (process != null)
+            {
+                try
                 {
-                    process.Kill(entireProcessTree: true);
-                }
+                    if (!process.HasExited)
+                    {
+                        var isExited = await TryWaitForExitAsync(process, TimeSpan.FromSeconds(GracefulCloseTimeoutSeconds));
 
-                return true;
+                        if (!isExited)
+                        {
+                            process.Kill(entireProcessTree: true);
+                        }
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // The process exited between the check and the kill; nothing more to do.
+                }
+                finally
+                {
+                    process.Dispose();
+                }
             }
-            catch (InvalidOperationException)
-            {
-                // The process exited between the checks and the kill; treat as not-stopped.
-                return false;
-            }
-            finally
-            {
-                process.Dispose();
-            }
+
+            // Report that a stop was requested. The graceful close is broadcast in every case —
+            // even when the launched process had already exited — so the browser is always asked to
+            // close instead of returning a misleading "was not running".
+            return true;
         }
 
         // Waits for the process to exit, returning true if it exited within the timeout and false

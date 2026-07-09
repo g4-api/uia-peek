@@ -24,12 +24,13 @@
 
     // The DOM event names the recorder binds, paired with the settings toggle key that
     // enables each one. Declared once here so the content script and the catalog agree.
+    // Typed text is NOT listed here: it is captured from debounced `input` events directly in
+    // the content script (see onTypingInput), not through this per-DOM-event descriptor path, so
+    // one SendKeys is emitted per field at typing time. `change` is intentionally not bound.
     const CATALOG_ENTRIES = [
         { domEventName: "click", settingKey: "click" },
         { domEventName: "dblclick", settingKey: "doubleClick" },
         { domEventName: "contextmenu", settingKey: "contextMenu" },
-        { domEventName: "input", settingKey: "input" },
-        { domEventName: "change", settingKey: "change" },
         { domEventName: "keydown", settingKey: "keyDown" },
         { domEventName: "keyup", settingKey: "keyUp" },
         { domEventName: "submit", settingKey: "submit" },
@@ -78,17 +79,16 @@
      * Resolves the contract descriptor (type, event, value) for a DOM event.
      *
      * @remarks
-     * Compute-only. Each branch builds the value payload appropriate to its event
-     * family. Password redaction is applied here so no sensitive value ever leaves the
-     * content script when the user enables the option.
+     * Compute-only. Each branch builds the value payload appropriate to its event family.
+     * Typed text (SendKeys) is not resolved here — it is captured from debounced `input`
+     * events in the content script via newSendKeysDescriptor, where password redaction applies.
      *
      * @param {object} options Descriptor inputs.
      * @param {Event} options.domEvent The DOM event being recorded.
-     * @param {boolean} options.isRedactPasswordsEnabled Whether to mask secret inputs.
      * @returns {object|null} The descriptor ({ type, event, value }) or null to ignore.
      */
     function resolveEventDescriptor(options) {
-        const { domEvent, isRedactPasswordsEnabled } = options;
+        const { domEvent } = options;
         const domEventName = domEvent.type;
 
         // Mouse-family events share a click-style descriptor with client coordinates.
@@ -105,17 +105,6 @@
             return newScrollDescriptor(domEvent);
         }
 
-        // A committed field change is captured as a single SendKeys for the typed text.
-        // Checkbox/radio toggles are skipped here because the click already captures them,
-        // so their change would otherwise add a redundant SendKeys.
-        if (domEventName === "change") {
-            if (testToggleInput(domEvent.target)) {
-                return null;
-            }
-
-            return newSendKeysDescriptor({ domEvent, isRedactPasswordsEnabled });
-        }
-
         // A form submission becomes a SubmitForm action.
         if (domEventName === "submit") {
             return newSubmitDescriptor(domEvent);
@@ -130,13 +119,12 @@
             return newKeyCombinationDescriptor(domEvent);
         }
 
-        // TODO: Single-key and live typing are deferred. keydown/keyup and per-keystroke
-        // `input` will later become discrete key actions (Enter/Tab/Esc/arrows) and/or a
-        // finer SendKeys stream. For now they are placeholders that emit nothing; typed
-        // text is captured as one SendKeys on `change` above.
+        // keydown/keyup are deferred placeholders: discrete key actions (Enter/Tab/Esc/arrows)
+        // are not implemented yet, so they emit nothing here. Typed text is captured separately
+        // from debounced `input` events in the content script, so `input` never reaches this
+        // resolver.
         const isDeferredKeyEvent = domEventName === "keydown"
-            || domEventName === "keyup"
-            || domEventName === "input";
+            || domEventName === "keyup";
 
         if (isDeferredKeyEvent) {
             return null;
@@ -243,6 +231,35 @@
     }
 
     /**
+     * Builds the descriptor for a hover dwell as a MoveMouseCursor action.
+     *
+     * @remarks
+     * Compute-only helper. Called by the content script's hover detection when the mouse has
+     * rested over an element for the configured dwell. It is a genuine in-frame pointer gesture,
+     * so it may drive a frame switch (resting inside an iframe records that frame's element).
+     *
+     * @param {object} options Descriptor inputs.
+     * @param {number} options.x The cursor client X coordinate at rest.
+     * @param {number} options.y The cursor client Y coordinate at rest.
+     * @param {number} options.dwellMilliseconds How long the mouse rested before recording.
+     * @returns {object} The descriptor.
+     */
+    function newMoveMouseCursorDescriptor(options) {
+        const { x, y, dwellMilliseconds } = options;
+
+        return {
+            type: EVENT_TYPES.mouse,
+            event: "MoveMouseCursor",
+            isFrameSwitchTrigger: true,
+            value: {
+                X: Math.round(x || 0),
+                Y: Math.round(y || 0),
+                dwellMilliseconds
+            }
+        };
+    }
+
+    /**
      * Builds the descriptor for a wheel event as an InvokeScroll action.
      *
      * @remarks
@@ -280,28 +297,27 @@
     }
 
     /**
-     * Builds the descriptor for a committed field change as a SendKeys action.
+     * Builds the SendKeys descriptor for a typed field's current text.
      *
      * @remarks
-     * Compute-only helper. Fires on `change` (field commit) so typing is captured as one
-     * SendKeys per field rather than per keystroke. When redaction is enabled and the
-     * target is a password (or a field marked sensitive), the text is masked so the
-     * secret never leaves the page.
+     * Compute-only helper. Called by the content script's debounced typing capture with the
+     * field element (not a DOM event), so one SendKeys is emitted per field at typing time.
+     * When redaction is enabled and the target is a password (or a field marked sensitive),
+     * the text is masked so the secret never leaves the page.
      *
      * @param {object} options Descriptor inputs.
-     * @param {Event} options.domEvent The change event.
+     * @param {Element} options.targetElement The field element being typed into.
      * @param {boolean} options.isRedactPasswordsEnabled Whether to mask secret inputs.
      * @returns {object} The descriptor.
      */
     function newSendKeysDescriptor(options) {
-        const { domEvent, isRedactPasswordsEnabled } = options;
-        const targetElement = domEvent.target;
+        const { targetElement, isRedactPasswordsEnabled } = options;
 
         // Decide whether this field's text must be masked before it is recorded.
         const isSensitiveField = testSensitiveField(targetElement);
         const isRedactionRequired = isRedactPasswordsEnabled && isSensitiveField;
 
-        // Resolve the value payload: masked secret, toggle state, or raw field text.
+        // Resolve the value payload: masked secret or raw field text.
         const value = newSendKeysValue({
             targetElement,
             isRedactionRequired
@@ -310,9 +326,9 @@
         return {
             type: EVENT_TYPES.keyboard,
             event: "SendKeys",
-            // SendKeys is derived from `change`, which commits on blur and can fire in a
-            // background or mirror frame the user never interacted with (for example a duplicate
-            // search form in a same-origin sub-frame). It must not drive a frame switch.
+            // Typing follows the click that focused the field, which already handled any frame
+            // switch, so SendKeys itself must not drive one. This also keeps a value synced into
+            // a background/mirror frame from ever emitting a spurious SwitchFrame.
             isFrameSwitchTrigger: false,
             value
         };
@@ -338,13 +354,13 @@
             return { text: "***", isRedacted: true };
         }
 
-        // Checkboxes and radios are better described by their checked state.
-        const isToggleInput = targetElement
-            && targetElement.nodeName === "INPUT"
-            && (targetElement.type === "checkbox" || targetElement.type === "radio");
+        // contenteditable elements carry their text in textContent rather than value.
+        if (targetElement && targetElement.isContentEditable) {
+            const editableText = typeof targetElement.textContent === "string"
+                ? targetElement.textContent
+                : "";
 
-        if (isToggleInput) {
-            return { text: targetElement.value || "", checked: Boolean(targetElement.checked) };
+            return { text: editableText.slice(0, 512) };
         }
 
         // Otherwise record the current field text, capped to a safe length.
@@ -444,29 +460,12 @@
         return isPasswordInput || isMarkedSensitive;
     }
 
-    /**
-     * Tests whether an element is a checkbox or radio toggle.
-     *
-     * @remarks
-     * Compute-only helper. Toggles are recorded via their click, so their `change` event is
-     * skipped to avoid a redundant SendKeys.
-     *
-     * @param {Element} targetElement The element that produced a change event.
-     * @returns {boolean} True for a checkbox or radio input.
-     */
-    function testToggleInput(targetElement) {
-        // Only INPUT elements of type checkbox or radio are toggles.
-        const isToggleInput = Boolean(targetElement)
-            && targetElement.nodeName === "INPUT"
-            && (targetElement.type === "checkbox" || targetElement.type === "radio");
-
-        return isToggleInput;
-    }
-
     // Expose the catalog API on the shared namespace.
     namespace.catalog = {
         getCatalogEntries,
         getEventPoint,
+        newMoveMouseCursorDescriptor,
+        newSendKeysDescriptor,
         resolveEventDescriptor
     };
 })(globalThis);

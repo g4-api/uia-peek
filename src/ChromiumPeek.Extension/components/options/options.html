@@ -142,6 +142,45 @@
           </span>
         </div>
 
+        <div class="recorder-options__field">
+          <label class="recorder-options__label" for="hover-dwell-input">
+            Hover dwell (seconds)
+          </label>
+          <div id="hover-dwell-field"
+               class="number-field"
+               data-test-id="hover-dwell-field">
+            <input type="number"
+                   id="hover-dwell-input"
+                   class="number-field__input"
+                   data-test-id="hover-dwell-input"
+                   aria-describedby="hover-dwell-hint"
+                   max="60"
+                   min="1"
+                   step="1">
+            <span class="number-field__spin">
+              <button type="button"
+                      class="number-field__step number-field__step--up"
+                      data-test-id="hover-dwell-step-up"
+                      aria-label="Increase hover dwell"
+                      tabindex="-1">
+                &#9650;
+              </button>
+              <button type="button"
+                      class="number-field__step number-field__step--down"
+                      data-test-id="hover-dwell-step-down"
+                      aria-label="Decrease hover dwell"
+                      tabindex="-1">
+                &#9660;
+              </button>
+            </span>
+          </div>
+          <span id="hover-dwell-hint"
+                class="recorder-options__hint"
+                data-test-id="hover-dwell-hint">
+            How long the mouse must rest over an element before a Hover event is recorded. Only used when Hover is on.
+          </span>
+        </div>
+
         <fieldset class="recorder-options__field recorder-options__events-fieldset"
                   data-test-id="enabled-events-fieldset">
           <legend class="recorder-options__label">
@@ -192,6 +231,21 @@
               </button>
               <span class="recorder-options__hint recorder-options__event-hint">
                 Fires on a right-click / context menu.
+              </span>
+            </div>
+
+            <div class="recorder-options__event">
+              <button type="button"
+                      id="event-toggle-hover"
+                      class="switch"
+                      data-test-id="event-toggle-hover"
+                      aria-checked="false"
+                      role="switch">
+                <span class="switch__track"><span class="switch__knob"></span></span>
+                <span class="switch__label">Hover</span>
+              </button>
+              <span class="recorder-options__hint recorder-options__event-hint">
+                Records the cursor position after it rests over an element (see Hover dwell), for grabbing hard-to-inspect locators. Off by default.
               </span>
             </div>
 

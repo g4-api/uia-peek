@@ -32,6 +32,8 @@
         redactPasswordsSwitch: document.getElementById("redact-passwords-switch"),
         maxStackSizeField: document.getElementById("max-stack-size-field"),
         maxStackSizeInput: document.getElementById("max-stack-size-input"),
+        hoverDwellField: document.getElementById("hover-dwell-field"),
+        hoverDwellInput: document.getElementById("hover-dwell-input"),
         resetDefaultsButton: document.getElementById("reset-defaults-button"),
         statusMessage: document.getElementById("settings-status-message")
     };
@@ -66,11 +68,20 @@
             ? parsedStackSize
             : DEFAULT_SETTINGS.maximumStackSize;
 
+        // Normalise the hover dwell: the field is whole seconds, the setting is milliseconds.
+        // Fall back to the default when the field is blank or invalid.
+        const parsedDwellSeconds = parseInt(elements.hoverDwellInput.value, 10);
+        const isDwellValid = Number.isFinite(parsedDwellSeconds) && parsedDwellSeconds > 0;
+        const hoverDwellMilliseconds = isDwellValid
+            ? parsedDwellSeconds * 1000
+            : DEFAULT_SETTINGS.hoverDwellMilliseconds;
+
         return {
             hubUrl: elements.hubUrlInput.value.trim() || DEFAULT_SETTINGS.hubUrl,
             isAutoConnectEnabled: controls.autoConnect.get(),
             isRedactPasswordsEnabled: controls.redactPasswords.get(),
             maximumStackSize,
+            hoverDwellMilliseconds,
             reconnectDelaysMilliseconds: getReconnectDelays(elements.reconnectDelaysInput.value),
             enabledEvents
         };
@@ -133,6 +144,7 @@
             autoConnect: formControls.newToggleSwitch(elements.autoConnectSwitch),
             redactPasswords: formControls.newToggleSwitch(elements.redactPasswordsSwitch),
             numberField: formControls.newNumberField(elements.maxStackSizeField),
+            hoverDwellField: formControls.newNumberField(elements.hoverDwellField),
             eventSwitches
         };
     }
@@ -212,6 +224,7 @@
         // Fill the scalar fields.
         elements.hubUrlInput.value = settingsToShow.hubUrl;
         elements.maxStackSizeInput.value = String(settingsToShow.maximumStackSize);
+        elements.hoverDwellInput.value = String(Math.round(settingsToShow.hoverDwellMilliseconds / 1000));
         elements.reconnectDelaysInput.value = settingsToShow.reconnectDelaysMilliseconds.join(", ");
 
         // Sync the boolean switches.

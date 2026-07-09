@@ -72,6 +72,9 @@
         isAutoConnectEnabled: true,
         isRedactPasswordsEnabled: false,
         maximumStackSize: 200,
+        // How long the mouse must rest over an element before a Hover MoveMouseCursor is
+        // recorded. Only used when enabledEvents.hover is on.
+        hoverDwellMilliseconds: 5000,
         reconnectDelaysMilliseconds: [0, 2000, 5000, 10000, 30000],
         enabledEvents: {
             click: true,
@@ -86,6 +89,9 @@
             // Scroll/wheel is off by default: a single gesture fires many wheel events,
             // which floods the recording. It can be re-enabled on the settings page.
             wheel: false,
+            // Hover is off by default: it would otherwise fire whenever the mouse pauses.
+            // Enable it to record a MoveMouseCursor for grabbing hard-to-inspect locators.
+            hover: false,
             navigation: true,
             switchFrame: true,
             switchParentFrame: true,
