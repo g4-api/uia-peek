@@ -2,8 +2,6 @@
 
 using System.Threading.Tasks;
 
-using UiaPeek.Domain.Models;
-
 using Common.Domain.Models;
 
 namespace UiaPeek.Domain.Hubs

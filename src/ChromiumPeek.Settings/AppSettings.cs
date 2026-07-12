@@ -3,9 +3,7 @@
 using Microsoft.Extensions.Configuration;
 
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -88,48 +86,6 @@ namespace ChromiumPeek.Settings
 
             // Return the JSON options with custom settings and converters added
             return jsonOptions;
-        }
-
-        // Retrieves a value from an environment variable and converts it to the specified type <typeparamref name="T"/>.
-        // If the environment variable is not found, empty, or cannot be converted, returns the provided default value.
-        private static T GetOrDefault<T>(string environmentParameter, T defaultValue)
-        {
-            // Attempt to read the environment variable value
-            var envValue = Environment.GetEnvironmentVariable(environmentParameter);
-
-            // If the environment variable is missing or blank, use the default value
-            if (string.IsNullOrWhiteSpace(envValue))
-            {
-                return defaultValue;
-            }
-
-            try
-            {
-                // Check if T is a nullable type and get the underlying type
-                var underlyingType = Nullable.GetUnderlyingType(typeof(T));
-                var targetType = underlyingType ?? typeof(T);
-
-                // Special handling for booleans to support "true", "false", "1", and "0"
-                if (targetType == typeof(bool))
-                {
-                    if (bool.TryParse(envValue, out bool boolResult))
-                    {
-                        return (T)(object)boolResult;
-                    }
-
-                    // Support numeric boolean representation
-                    if (envValue.Trim() == "1") return (T)(object)true;
-                    if (envValue.Trim() == "0") return (T)(object)false;
-                }
-
-                // Attempt to convert the string value to the target type using system conversion
-                return (T)Convert.ChangeType(envValue.Trim(), targetType);
-            }
-            catch
-            {
-                // If conversion fails (e.g., invalid format), fall back to the default value
-                return defaultValue;
-            }
         }
         #endregion
     }
