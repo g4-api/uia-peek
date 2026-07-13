@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>G4 Chromium Recorder</title>
+
+  <link rel="stylesheet" href="../../css/fonts.css">
+  <link rel="stylesheet" href="../../css/theme.parameters.css">
+  <link rel="stylesheet" href="popup.parameters.css">
+  <link rel="stylesheet" href="popup.layout.css">
+  <link rel="stylesheet" href="popup.visual.css">
+</head>
+
+<body>
+  <main class="recorder-popup"
+        data-test-id="recorder-popup-root"
+        aria-label="G4 Chromium Recorder status">
+    <header class="recorder-popup__header"
+            data-test-id="recorder-popup-header">
+      <h1 class="recorder-popup__title">
+        G4 Chromium Recorder
+      </h1>
+
+      <span id="connection-status-badge"
+            class="recorder-popup__status-badge"
+            data-test-id="connection-status-badge"
+            aria-live="polite">
+        <span id="connection-status-dot"
+              class="recorder-popup__status-dot"
+              data-test-id="connection-status-dot"></span>
+        <span id="connection-status-text"
+              data-test-id="connection-status-text">
+          Disconnected
+        </span>
+      </span>
+    </header>
+
+    <section class="recorder-popup__details"
+             data-test-id="recorder-popup-details"
+             aria-label="Session details">
+      <span class="recorder-popup__detail-label">
+        Hub
+      </span>
+      <span id="hub-url-value"
+            class="recorder-popup__detail-value"
+            data-test-id="hub-url-value">
+        &mdash;
+      </span>
+
+      <span class="recorder-popup__detail-label">
+        Session
+      </span>
+      <span id="session-id-value"
+            class="recorder-popup__detail-value"
+            data-test-id="session-id-value">
+        &mdash;
+      </span>
+
+      <span class="recorder-popup__detail-label">
+        Started
+      </span>
+      <span id="session-started-value"
+            class="recorder-popup__detail-value"
+            data-test-id="session-started-value">
+        &mdash;
+      </span>
+
+      <span class="recorder-popup__detail-label">
+        Events
+      </span>
+      <span id="event-count-value"
+            class="recorder-popup__detail-value"
+            data-test-id="event-count-value">
+        0
+      </span>
+    </section>
+
+    <section id="captured-events-list"
+             class="recorder-popup__events"
+             data-test-id="captured-events-list"
+             aria-label="Captured events"
+             aria-live="polite">
+      <p id="captured-events-empty"
+         class="recorder-popup__empty"
+         data-test-id="captured-events-empty">
+        No events captured in this session yet.
+      </p>
+    </section>
+
+    <section class="recorder-popup__actions"
+             data-test-id="recorder-popup-actions"
+             aria-label="Recorder actions">
+      <button type="button"
+              id="reconnect-button"
+              class="recorder-popup__button"
+              title="Reconnect to the hub"
+              data-test-id="reconnect-button">
+        Reconnect
+      </button>
+
+      <button type="button"
+              id="clear-stack-button"
+              class="recorder-popup__button recorder-popup__button--secondary"
+              title="Clear the captured events"
+              data-test-id="clear-stack-button">
+        Clear
+      </button>
+
+      <button type="button"
+              id="open-settings-button"
+              class="recorder-popup__button recorder-popup__button--secondary"
+              title="Open recorder settings"
+              data-test-id="open-settings-button">
+        Settings
+      </button>
+    </section>
+  </main>
+
+  <script src="../../lib/constants.js"></script>
+  <script src="popup.js"></script>
+</body>
+
+</html>

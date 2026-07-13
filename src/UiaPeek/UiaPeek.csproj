@@ -13,6 +13,11 @@
 		<ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
+		<!-- Run elevated with uiAccess so ElementFromPoint can inspect higher-integrity windows.
+		     Requires the built exe to be Authenticode-signed and launched from a trusted path
+		     (Program Files or System32); otherwise Windows refuses to start a uiAccess app. -->
+		<ApplicationManifest>app.manifest</ApplicationManifest>
+
 		<!-- https://learn.microsoft.com/en-us/dotnet/fundamentals/syslib-diagnostics/syslib1040-1049 -->
 		<NoWarn>$(NoWarn);SYSLIB1045;IDE0130;SYSLIB1054;CA2101;S4200</NoWarn>
 	</PropertyGroup>

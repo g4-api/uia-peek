@@ -1,0 +1,88 @@
+/**
+ * Form-controls visual language for the G4 Chromium Recorder extension.
+ *
+ * Colours, borders, and states only for the on/off switch and the themed number field.
+ * Every value comes from a form-controls parameter variable so the controls stay
+ * theme-ready. Corners are square because the radius tokens resolve to 0.
+ */
+.switch {
+  background: transparent;
+  border: 0;
+  color: var(--switch-foreground);
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.switch__label {
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.switch__track {
+  background: var(--switch-track-background);
+  border: 1px solid var(--switch-track-border-color);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.switch__knob {
+  background: var(--switch-knob-background);
+  transition: left 0.15s ease, background 0.15s ease;
+}
+
+.switch--on .switch__label {
+  color: var(--switch-on-foreground);
+}
+
+.switch--on .switch__track {
+  background: var(--switch-on-track-background);
+  border-color: var(--switch-on-border-color);
+}
+
+.switch--on .switch__knob {
+  background: var(--switch-on-knob-background);
+}
+
+.switch:focus-visible {
+  outline: var(--switch-focus-outline);
+  outline-offset: 2px;
+}
+
+.number-field__input {
+  color: var(--number-field-foreground);
+  background: var(--number-field-background);
+  border: var(--number-field-border);
+  font-family: var(--number-field-font-family);
+  outline: none;
+  appearance: textfield;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.number-field__input::-webkit-inner-spin-button,
+.number-field__input::-webkit-outer-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.number-field__input:focus {
+  border-color: var(--number-field-focus-border-color);
+  box-shadow: var(--number-field-focus-glow);
+}
+
+.number-field__step {
+  color: var(--number-field-step-foreground);
+  background: var(--number-field-step-background);
+  border: 0;
+  border-left: 1px solid var(--number-field-step-border-color);
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.number-field__step--up {
+  border-bottom: 1px solid var(--number-field-step-border-color);
+}
+
+.number-field__step:hover {
+  color: var(--number-field-step-hover-foreground);
+}

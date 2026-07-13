@@ -1,0 +1,31 @@
+/**
+ * Form-controls parameters for the G4 Chromium Recorder extension.
+ *
+ * Component-scoped variables for the on/off switch and the themed number field, mapped
+ * onto the global theme tokens so the visual layer stays theme-ready. This file contains
+ * CSS custom properties only.
+ */
+:root {
+  /* On/off switch: gray when off, green when on (matching the Electron app). */
+  --switch-foreground: var(--theme-muted-foreground);
+  --switch-track-background: var(--theme-panel-background);
+  --switch-track-border-color: var(--theme-muted-foreground);
+  --switch-knob-background: var(--theme-muted-foreground);
+  --switch-on-foreground: var(--theme-status-connected);
+  --switch-on-track-background: rgb(0 230 118 / 22%);
+  --switch-on-border-color: var(--theme-status-connected);
+  --switch-on-knob-background: var(--theme-status-connected);
+  --switch-focus-outline: 2px solid var(--theme-focus-color);
+
+  /* Themed number field with steppers overlaid inside the input. */
+  --number-field-foreground: var(--theme-surface-foreground);
+  --number-field-background: var(--theme-panel-background);
+  --number-field-border: 1px solid var(--theme-border-color);
+  --number-field-focus-border-color: var(--theme-focus-color);
+  --number-field-focus-glow: var(--theme-focus-glow);
+  --number-field-font-family: var(--theme-font-family);
+  --number-field-step-foreground: var(--theme-muted-foreground);
+  --number-field-step-background: transparent;
+  --number-field-step-hover-foreground: var(--theme-surface-foreground);
+  --number-field-step-border-color: var(--theme-border-color);
+}

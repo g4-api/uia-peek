@@ -24,7 +24,8 @@ env:
   binariesDirectory: ${{ github.workspace }}/binaries
   buildConfiguration: 'Release'
   buildPlatform: 'any cpu'
-  projectName: UiaPeek
+  chromiumPeekProjectName: ChromiumPeek
+  uiaPeekProjectName: UiaPeek
 
 # Default settings for all run steps
 defaults:
@@ -62,9 +63,9 @@ jobs:
         $version = "${{ steps.parse-version.outputs.version }}"
         echo "valid=$($version -match '^\d+(\.\d+){3}$')" >> $env:GITHUB_OUTPUT
 
-  # Job to build and publish the project
-  build:
-    name: Build & Publish Version ${{ needs.new-version.outputs.buildVersion }}
+  # Job to build and publish UiaPeek
+  build-uia-peek:
+    name: Build & Publish UiaPeek Version ${{ needs.new-version.outputs.buildVersion }}
     runs-on: windows-latest
     needs: new-version
     if: ${{ needs.new-version.result == 'success' && needs.new-version.outputs.validVersion == 'True' }}
@@ -86,21 +87,17 @@ jobs:
     - name: Setup .NET Core SDK
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8
+        dotnet-version: 10.x
 
     # Step to restore packages
     - name: Restore Packages
       shell: pwsh
-      run: dotnet restore
-
-    # Add msbuild to PATH to ensure that MSBuild is available for the build and publish steps
-    - name: Add msbuild to PATH
-      uses: microsoft/setup-msbuild@v2
+      run: dotnet restore ${{ env.uiaPeekProjectName }}/${{ env.uiaPeekProjectName }}.csproj
 
     # Step to publish the project
     - name: Publish
       shell: pwsh
-      run: msbuild ${{ env.projectName }}/${{ env.projectName }}.csproj /t:Publish /p:Configuration=Release /p:PublishDir=${{ env.binariesDirectory }}/publish/
+      run: dotnet publish ${{ env.uiaPeekProjectName }}/${{ env.uiaPeekProjectName }}.csproj --configuration ${{ env.buildConfiguration }} --output ${{ env.binariesDirectory }}/${{ env.uiaPeekProjectName }}/publish
 
     # Step to create a build artifact
     - name: Create Build Artifact
@@ -108,14 +105,66 @@ jobs:
       run: |
         New-Item -Path "${{ env.artifactStagingDirectory }}" -ItemType Directory
         Compress-Archive `
-            -Path ${{ env.binariesDirectory }}/publish/* `
-            -DestinationPath ${{ env.artifactStagingDirectory }}/${{ env.projectName }}.${{ env.buildVersion }}-win-x64.zip 
+            -Path ${{ env.binariesDirectory }}/${{ env.uiaPeekProjectName }}/publish/* `
+            -DestinationPath ${{ env.artifactStagingDirectory }}/${{ env.uiaPeekProjectName }}.${{ env.buildVersion }}-win-x64.zip 
 
     # Step to upload the build artifact
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: drop
+        name: uia-peek-drop
+        path: ${{ env.artifactStagingDirectory }}/*.zip
+
+  # Job to build and publish ChromiumPeek
+  build-chromium-peek:
+    name: Build & Publish ChromiumPeek Version ${{ needs.new-version.outputs.buildVersion }}
+    runs-on: windows-latest
+    needs: new-version
+    if: ${{ needs.new-version.result == 'success' && needs.new-version.outputs.validVersion == 'True' }}
+
+    # Outputs of the job
+    outputs:
+      buildVersion: ${{ needs.new-version.outputs.buildVersion }}
+    
+    # Set environment variables specific to the build job
+    env:
+      buildVersion: ${{ needs.new-version.outputs.buildVersion }}
+    
+    steps:
+    # Step to checkout the repository
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    # Step to setup .NET Core SDK
+    - name: Setup .NET Core SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.x
+
+    # Step to restore packages
+    - name: Restore Packages
+      shell: pwsh
+      run: dotnet restore ${{ env.chromiumPeekProjectName }}/${{ env.chromiumPeekProjectName }}.csproj
+
+    # Step to publish the project
+    - name: Publish
+      shell: pwsh
+      run: dotnet publish ${{ env.chromiumPeekProjectName }}/${{ env.chromiumPeekProjectName }}.csproj --configuration ${{ env.buildConfiguration }} --output ${{ env.binariesDirectory }}/${{ env.chromiumPeekProjectName }}/publish
+
+    # Step to create a build artifact
+    - name: Create Build Artifact
+      shell: pwsh
+      run: |
+        New-Item -Path "${{ env.artifactStagingDirectory }}" -ItemType Directory
+        Compress-Archive `
+            -Path ${{ env.binariesDirectory }}/${{ env.chromiumPeekProjectName }}/publish/* `
+            -DestinationPath ${{ env.artifactStagingDirectory }}/${{ env.chromiumPeekProjectName }}.${{ env.buildVersion }}.zip 
+
+    # Step to upload the build artifact
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: chromium-peek-drop
         path: ${{ env.artifactStagingDirectory }}/*.zip
 
   # Job to create a GitHub release and tag the new version
@@ -124,7 +173,8 @@ jobs:
     runs-on: windows-latest
     needs: 
       - new-version
-      - build
+      - build-uia-peek
+      - build-chromium-peek
     if: success()
 
     # Set environment variables specific to the release job
@@ -136,17 +186,23 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Step to download build artifacts
-    - name: Download Build Artifacts
+    # Step to download UiaPeek build artifacts
+    - name: Download UiaPeek Build Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: drop
+        name: uia-peek-drop
+
+    # Step to download ChromiumPeek build artifacts
+    - name: Download ChromiumPeek Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: chromium-peek-drop
 
     # Step to create a GitHub release and tag
     - name: Create GitHub Release & Tag v${{ env.buildVersion }}
       uses: softprops/action-gh-release@v2
       with:
-        files: ./${{ env.projectName }}.${{ env.buildVersion }}-win-x64.zip
+        files: ./*.zip
         tag_name: v${{ env.buildVersion }}
         name: ${{ env.artifactType }} v${{ env.buildVersion }}
         generate_release_notes: true

@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>G4 Chromium Recorder — Test Page</title>
+
+  <style>
+    :root {
+      --page-foreground: #1f2933;
+      --page-background: #ffffff;
+      --panel-background: #f4f6f8;
+      --muted-foreground: #6b7280;
+      --border-color: #d7dde3;
+      --accent: #2563eb;
+      --accent-foreground: #ffffff;
+      --font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      --mono-font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+    }
+
+    body {
+      margin: 0;
+      padding: 1.5rem;
+      color: var(--page-foreground);
+      background: var(--page-background);
+      font-family: var(--font-family);
+      line-height: 1.5;
+    }
+
+    h1 {
+      margin: 0 0 0.5rem;
+      font-size: 1.4rem;
+    }
+
+    h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.05rem;
+    }
+
+    .recorder-test__section {
+      margin: 0 0 1.25rem;
+      padding: 1rem;
+      background: var(--panel-background);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+
+    .recorder-test__row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0.5rem 0;
+    }
+
+    .recorder-test__field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .recorder-test__hint {
+      color: var(--muted-foreground);
+      font-size: 0.8125rem;
+    }
+
+    button {
+      padding: 0.45rem 0.85rem;
+      color: var(--accent-foreground);
+      background: var(--accent);
+      border: none;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    button.recorder-test__secondary {
+      color: var(--page-foreground);
+      background: #e8edf2;
+    }
+
+    input,
+    select,
+    textarea {
+      padding: 0.4rem 0.55rem;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+
+    .recorder-test__target {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 13rem;
+      height: 3.25rem;
+      background: #fff;
+      border: 2px dashed var(--accent);
+      border-radius: 6px;
+      user-select: none;
+    }
+
+    .recorder-test__scroll {
+      height: 8rem;
+      overflow: auto;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+    }
+
+    .recorder-test__scroll-inner {
+      height: 32rem;
+      padding: 0.5rem;
+    }
+
+    .recorder-test__legend {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .recorder-test__legend th,
+    .recorder-test__legend td {
+      padding: 0.35rem 0.5rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .recorder-test__legend code {
+      font-family: var(--mono-font-family);
+    }
+
+    iframe {
+      width: 100%;
+      height: 12rem;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+    }
+
+    .recorder-test__deep > div {
+      padding-left: 0.75rem;
+      border-left: 2px solid var(--border-color);
+    }
+
+    .recorder-test__combobox {
+      position: relative;
+      width: 16rem;
+    }
+
+    .recorder-test__combobox-input {
+      width: 100%;
+      box-sizing: border-box;
+      cursor: pointer;
+      background: #fff;
+    }
+
+    .recorder-test__combobox-list {
+      position: absolute;
+      z-index: 10;
+      width: 100%;
+      margin: 0.15rem 0 0;
+      padding: 0.2rem;
+      list-style: none;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgb(15 23 42 / 12%);
+    }
+
+    .recorder-test__combobox-option {
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .recorder-test__combobox-option:hover,
+    .recorder-test__combobox-option[aria-selected="true"] {
+      background: #e8edf2;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Full page view: rendered for the top document. Hidden/removed when this file is
+       loaded inside its own same-origin iframe via ?view=frame. -->
+  <main id="full-view"
+        class="recorder-test"
+        data-test-id="recorder-test-root"
+        aria-label="G4 Chromium Recorder test page">
+    <h1>G4 Chromium Recorder — Test Page</h1>
+
+    <p class="recorder-test__hint">
+      Open with the recorder connected, then trigger each item below and watch the events
+      at the hub. Served at <code>/recorder-test.html</code>.
+    </p>
+
+    <section id="section-legend"
+             class="recorder-test__section"
+             data-test-id="legend-section"
+             aria-label="Action legend">
+      <h2>What to trigger → expected event</h2>
+
+      <table class="recorder-test__legend"
+             data-test-id="legend-table">
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>How to trigger</th>
+            <th>Expected event</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Click</td><td>Click the button or link</td><td><code>InvokeClick</code></td></tr>
+          <tr><td>Double click</td><td>Double-click the target</td><td><code>InvokeDoubleClick</code></td></tr>
+          <tr><td>Context click</td><td>Right-click the target</td><td><code>InvokeContextClick</code></td></tr>
+          <tr><td>Scroll</td><td>Wheel over the scroll box</td><td><code>InvokeScroll</code></td></tr>
+          <tr><td>Type</td><td>Edit a field, then blur it</td><td><code>SendKeys</code></td></tr>
+          <tr><td>Combo (built-in)</td><td>Pick from select / datalist / multi-select</td><td><code>SendKeys</code></td></tr>
+          <tr><td>Combo (custom)</td><td>Open the custom combobox, click an option</td><td><code>InvokeClick</code></td></tr>
+          <tr><td>Submit</td><td>Submit the form</td><td><code>SubmitForm</code></td></tr>
+          <tr><td>Open in new tab/window</td><td>Click the open buttons, then focus the new context</td><td><code>SwitchWindow</code></td></tr>
+          <tr><td>Same-origin frame</td><td>Click inside the same-origin iframe</td><td><code>SwitchFrame</code> (+ locator)</td></tr>
+          <tr><td>Cross-origin frame</td><td>Click inside the example.com iframe</td><td><code>SwitchFrame</code> (URL fallback)</td></tr>
+          <tr><td>Refresh</td><td>Click Reload, or press F5</td><td><code>UpdatePage</code></td></tr>
+          <tr><td>Back / Forward</td><td>Browser back/forward buttons</td><td><code>UndoNavigation</code> / <code>RedoNavigation</code></td></tr>
+          <tr><td>Open URL</td><td>Type a URL in the address bar</td><td><code>OpenUrl</code></td></tr>
+          <tr><td>Switch tab</td><td>Activate another browser tab</td><td><code>SwitchWindow</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="section-clicks"
+             class="recorder-test__section"
+             data-test-id="clicks-section"
+             aria-label="Click actions">
+      <h2>Clicks</h2>
+
+      <div class="recorder-test__row">
+        <button type="button"
+                id="demo-click-button"
+                title="Plain click"
+                data-test-id="demo-click-button">
+          Click me
+        </button>
+
+        <a id="demo-click-link"
+           href="#section-inputs"
+           title="Internal anchor link"
+           data-test-id="demo-click-link">
+          Anchor link (jumps to Inputs)
+        </a>
+
+        <div id="demo-double-click-target"
+             class="recorder-test__target"
+             title="Double-click me"
+             data-test-id="demo-double-click-target">
+          Double-click target
+        </div>
+
+        <div id="demo-context-click-target"
+             class="recorder-test__target"
+             title="Right-click me"
+             data-test-id="demo-context-click-target">
+          Right-click target
+        </div>
+      </div>
+    </section>
+
+    <section id="section-scroll"
+             class="recorder-test__section"
+             data-test-id="scroll-section"
+             aria-label="Scroll action">
+      <h2>Scroll</h2>
+
+      <div id="demo-scroll-area"
+           class="recorder-test__scroll"
+           data-test-id="demo-scroll-area"
+           aria-label="Scrollable area">
+        <div class="recorder-test__scroll-inner">
+          Wheel up and down inside this box to emit InvokeScroll.
+        </div>
+      </div>
+    </section>
+
+    <section id="section-inputs"
+             class="recorder-test__section"
+             data-test-id="inputs-section"
+             aria-label="Input fields">
+      <h2>Inputs (commit a field to emit SendKeys)</h2>
+
+      <div class="recorder-test__row">
+        <div class="recorder-test__field">
+          <label for="demo-text-input">Text</label>
+          <input type="text"
+                 id="demo-text-input"
+                 data-test-id="demo-text-input"
+                 aria-label="Demo text input"
+                 placeholder="Type, then Tab away">
+        </div>
+
+        <div class="recorder-test__field">
+          <label for="demo-number-input">Number</label>
+          <input type="number"
+                 id="demo-number-input"
+                 data-test-id="demo-number-input"
+                 aria-label="Demo number input">
+        </div>
+
+        <div class="recorder-test__field">
+          <label for="demo-password-input">Password (redaction)</label>
+          <input type="password"
+                 id="demo-password-input"
+                 data-test-id="demo-password-input"
+                 aria-label="Demo password input"
+                 placeholder="Secret">
+        </div>
+
+        <div class="recorder-test__field">
+          <label for="demo-select">Select</label>
+          <select id="demo-select"
+                  data-test-id="demo-select"
+                  aria-label="Demo select">
+            <option value="one">One</option>
+            <option value="two">Two</option>
+            <option value="three">Three</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="recorder-test__row">
+        <div class="recorder-test__field">
+          <label for="demo-textarea">Textarea</label>
+          <textarea id="demo-textarea"
+                    data-test-id="demo-textarea"
+                    aria-label="Demo textarea"
+                    rows="2"></textarea>
+        </div>
+
+        <div class="recorder-test__field">
+          <span id="demo-contenteditable-label">Contenteditable</span>
+          <div id="demo-contenteditable"
+               class="recorder-test__target"
+               style="width: 16rem; height: auto; padding: 0.4rem;"
+               aria-labelledby="demo-contenteditable-label"
+               contenteditable="true"
+               data-test-id="demo-contenteditable"
+               role="textbox">
+            Editable text
+          </div>
+        </div>
+      </div>
+
+      <div class="recorder-test__row">
+        <label>
+          <input type="checkbox" id="demo-checkbox" data-test-id="demo-checkbox">
+          Checkbox
+        </label>
+
+        <label>
+          <input type="radio" id="demo-radio-a" name="demo-radio" value="a" data-test-id="demo-radio-a">
+          Radio A
+        </label>
+
+        <label>
+          <input type="radio" id="demo-radio-b" name="demo-radio" value="b" data-test-id="demo-radio-b">
+          Radio B
+        </label>
+      </div>
+    </section>
+
+    <section id="section-combos"
+             class="recorder-test__section"
+             data-test-id="combos-section"
+             aria-label="Combo boxes and lists">
+      <h2>Combo boxes &amp; lists</h2>
+
+      <div class="recorder-test__row">
+        <div class="recorder-test__field">
+          <label for="demo-combo-select">Dropdown (select)</label>
+          <select id="demo-combo-select"
+                  data-test-id="demo-combo-select"
+                  aria-label="Dropdown select">
+            <option value="apple">Apple</option>
+            <option value="banana">Banana</option>
+            <option value="cherry">Cherry</option>
+          </select>
+        </div>
+
+        <div class="recorder-test__field">
+          <label for="demo-datalist-input">Editable autocomplete (datalist)</label>
+          <input type="text"
+                 id="demo-datalist-input"
+                 data-test-id="demo-datalist-input"
+                 aria-label="Datalist combo box"
+                 list="demo-datalist"
+                 placeholder="Type or pick">
+          <datalist id="demo-datalist">
+            <option value="Amsterdam"></option>
+            <option value="Berlin"></option>
+            <option value="Copenhagen"></option>
+          </datalist>
+        </div>
+
+        <div class="recorder-test__field">
+          <label for="demo-multi-select">Multi-select</label>
+          <select id="demo-multi-select"
+                  data-test-id="demo-multi-select"
+                  aria-label="Multi select"
+                  multiple
+                  size="3">
+            <option value="red">Red</option>
+            <option value="green">Green</option>
+            <option value="blue">Blue</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="recorder-test__field">
+        <span id="demo-combobox-label">Custom combobox (ARIA)</span>
+        <div id="demo-combobox"
+             class="recorder-test__combobox"
+             data-test-id="demo-combobox">
+          <input type="text"
+                 id="demo-combobox-input"
+                 class="recorder-test__combobox-input"
+                 data-test-id="demo-combobox-input"
+                 autocomplete="off"
+                 readonly
+                 role="combobox"
+                 aria-controls="demo-combobox-listbox"
+                 aria-expanded="false"
+                 aria-labelledby="demo-combobox-label"
+                 placeholder="Choose an option">
+
+          <ul id="demo-combobox-listbox"
+              class="recorder-test__combobox-list"
+              data-test-id="demo-combobox-listbox"
+              role="listbox"
+              aria-labelledby="demo-combobox-label"
+              hidden>
+            <li id="demo-combobox-option-mercury"
+                class="recorder-test__combobox-option"
+                data-test-id="demo-combobox-option-mercury"
+                data-value="mercury"
+                role="option"
+                aria-selected="false">
+              Mercury
+            </li>
+
+            <li id="demo-combobox-option-venus"
+                class="recorder-test__combobox-option"
+                data-test-id="demo-combobox-option-venus"
+                data-value="venus"
+                role="option"
+                aria-selected="false">
+              Venus
+            </li>
+
+            <li id="demo-combobox-option-earth"
+                class="recorder-test__combobox-option"
+                data-test-id="demo-combobox-option-earth"
+                data-value="earth"
+                role="option"
+                aria-selected="false">
+              Earth
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="section-windows"
+             class="recorder-test__section"
+             data-test-id="windows-section"
+             aria-label="Open in new tab or window">
+      <h2>Open elsewhere</h2>
+
+      <div class="recorder-test__row">
+        <button type="button"
+                id="demo-open-tab-button"
+                title="Open this page in a new tab"
+                data-test-id="demo-open-tab-button">
+          Open in new tab
+        </button>
+
+        <button type="button"
+                id="demo-open-window-button"
+                class="recorder-test__secondary"
+                title="Open this page in a new window"
+                data-test-id="demo-open-window-button">
+          Open in new window
+        </button>
+      </div>
+
+      <p class="recorder-test__hint">
+        Each opens the full test page in a new context; focusing it emits
+        <code>SwitchWindow</code> and injects a fresh recorder content script.
+      </p>
+    </section>
+
+    <section id="section-form"
+             class="recorder-test__section"
+             data-test-id="form-section"
+             aria-label="Form submission">
+      <h2>Form</h2>
+
+      <form id="demo-form"
+            name="demoForm"
+            data-test-id="demo-form">
+        <div class="recorder-test__row">
+          <input type="text"
+                 id="demo-form-field"
+                 data-test-id="demo-form-field"
+                 aria-label="Form field"
+                 placeholder="Anything">
+
+          <button type="submit"
+                  id="demo-submit-button"
+                  title="Submit the form"
+                  data-test-id="demo-submit-button">
+            Submit form
+          </button>
+        </div>
+
+        <p class="recorder-test__hint">
+          Submission is cancelled by the page so it does not navigate; the recorder still
+          sees <code>SubmitForm</code>.
+        </p>
+      </form>
+    </section>
+
+    <section id="section-frames"
+             class="recorder-test__section"
+             data-test-id="frames-section"
+             aria-label="Frames">
+      <h2>Frames</h2>
+
+      <p class="recorder-test__hint">
+        Click a control inside a frame to emit <code>SwitchFrame</code> before the
+        interaction. The same-origin frame resolves the iframe locator; the cross-origin
+        frame falls back to URL + frameId (and needs network to load).
+      </p>
+
+      <div class="recorder-test__field">
+        <span>Same-origin iframe</span>
+        <iframe id="demo-same-origin-frame"
+                data-src="?view=frame"
+                data-test-id="demo-same-origin-frame"
+                title="Same-origin frame"></iframe>
+      </div>
+
+      <div class="recorder-test__field">
+        <span>Cross-origin iframe (example.com)</span>
+        <iframe id="demo-cross-origin-frame"
+                data-src="https://example.com"
+                data-test-id="demo-cross-origin-frame"
+                title="Cross-origin frame"></iframe>
+      </div>
+    </section>
+
+    <section id="section-mapping"
+             class="recorder-test__section"
+             data-test-id="mapping-section"
+             aria-label="Mapping variety">
+      <h2>Mapping variety</h2>
+
+      <div class="recorder-test__row">
+        <button type="button"
+                id="demo-aria-button"
+                data-test-id="demo-aria-button"
+                aria-label="Accessible name via aria-label">
+          ☰
+        </button>
+
+        <button type="button"
+                class="recorder-test__secondary"
+                data-test-id="demo-role-button"
+                role="switch"
+                aria-checked="false">
+          Role = switch
+        </button>
+
+        <img id="demo-image"
+             src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%232563eb'/%3E%3C/svg%3E"
+             alt="Blue square sample image"
+             data-test-id="demo-image"
+             width="40"
+             height="40">
+
+        <div id="demo-shadow-host"
+             data-test-id="demo-shadow-host">
+        </div>
+      </div>
+
+      <div class="recorder-test__deep"
+           data-test-id="demo-deep-nesting">
+        <div>
+          <div>
+            <div>
+              <button type="button"
+                      id="demo-deep-button"
+                      title="Deeply nested button"
+                      data-test-id="demo-deep-button">
+                Deeply nested click
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="section-nav"
+             class="recorder-test__section"
+             data-test-id="nav-section"
+             aria-label="Navigation aids">
+      <h2>Navigation</h2>
+
+      <div class="recorder-test__row">
+        <button type="button"
+                id="demo-reload-button"
+                class="recorder-test__secondary"
+                title="Reload the page"
+                data-test-id="demo-reload-button">
+          Reload page (UpdatePage)
+        </button>
+
+        <a id="demo-top-link"
+           href="#section-legend"
+           data-test-id="demo-top-link">
+          Back to top
+        </a>
+      </div>
+
+      <p class="recorder-test__hint">
+        Use the browser Back/Forward buttons for <code>UndoNavigation</code> /
+        <code>RedoNavigation</code>, type a URL in the address bar for
+        <code>OpenUrl</code>, and switch tabs for <code>SwitchWindow</code>.
+      </p>
+    </section>
+  </main>
+
+  <!-- Minimal view rendered when this file is loaded inside its own same-origin iframe. -->
+  <main id="frame-view"
+        class="recorder-test"
+        data-test-id="frame-view-root"
+        aria-label="Inside same-origin frame"
+        hidden>
+    <section class="recorder-test__section">
+      <h2>Inside same-origin frame</h2>
+
+      <div class="recorder-test__row">
+        <button type="button"
+                id="frame-click-button"
+                title="Click inside the frame"
+                data-test-id="frame-click-button">
+          Frame button
+        </button>
+
+        <input type="text"
+               id="frame-text-input"
+               data-test-id="frame-text-input"
+               aria-label="Frame text input"
+               placeholder="Type inside the frame">
+      </div>
+    </section>
+  </main>
+
+  <script>
+    /**
+     * Inline bootstrap for the recorder test page.
+     *
+     * The same file renders two layouts: the full page for the top document, and a
+     * minimal widget when loaded inside its own same-origin iframe (via ?view=frame).
+     * Self-framing is used so the same-origin child frame has a real http URL, which is
+     * required for the recorder's content script to inject and resolve the iframe locator.
+     */
+    (function initializeRecorderTestPage(globalScope) {
+      // Detect whether this document is the framed (minimal) view.
+      const viewParameter = new URLSearchParams(globalScope.location.search).get("view");
+      const isFrameView = viewParameter === "frame";
+
+      /**
+       * Activates the deferred iframes by promoting their data-src to src.
+       *
+       * @remarks
+       * Owns a DOM side effect. The iframes ship without a src so they never load (and
+       * cannot recurse) until the top document explicitly activates them here.
+       *
+       * @returns {void}
+       */
+      function startFrames() {
+        // Promote each deferred iframe's data-src so it begins loading now.
+        const deferredFrames = document.querySelectorAll("iframe[data-src]");
+
+        deferredFrames.forEach((frameElement) => {
+          frameElement.src = frameElement.getAttribute("data-src");
+        });
+      }
+
+      /**
+       * Attaches an open shadow root with a button to the shadow host.
+       *
+       * @remarks
+       * Owns a DOM side effect. Used to verify the recorder resolves the real target
+       * through composedPath rather than the retargeted shadow host.
+       *
+       * @returns {void}
+       */
+      function startShadowHost() {
+        // Resolve the host; do nothing when it is absent (framed view).
+        const shadowHost = document.getElementById("demo-shadow-host");
+
+        if (!shadowHost) {
+          return;
+        }
+
+        // Create the shadow tree and a button the recorder should see via composedPath.
+        const shadowRoot = shadowHost.attachShadow({ mode: "open" });
+        const shadowButton = document.createElement("button");
+
+        shadowButton.type = "button";
+        shadowButton.textContent = "Shadow DOM button";
+        shadowButton.setAttribute("data-test-id", "demo-shadow-button");
+
+        shadowRoot.append(shadowButton);
+      }
+
+      /**
+       * Wires the custom ARIA combobox: open/close on the input, select on an option,
+       * and close on an outside click.
+       *
+       * @remarks
+       * Owns the combobox DOM behaviour. The clicks here are also observed by the recorder
+       * (InvokeClick on the trigger and on the chosen option); this only maintains the
+       * widget's own open/selected state and ARIA attributes.
+       *
+       * @returns {void}
+       */
+      function startCombobox() {
+        // Resolve the combobox parts; do nothing when absent (framed view).
+        const comboboxInput = document.getElementById("demo-combobox-input");
+        const comboboxListbox = document.getElementById("demo-combobox-listbox");
+
+        if (!comboboxInput || !comboboxListbox) {
+          return;
+        }
+
+        // Reflect the open/closed state on the listbox and aria-expanded together.
+        const setExpanded = (isExpanded) => {
+          comboboxListbox.hidden = !isExpanded;
+          comboboxInput.setAttribute("aria-expanded", String(isExpanded));
+        };
+
+        // Toggle the listbox when the (read-only) combobox input is clicked.
+        const onComboboxToggle = (event) => {
+          event.preventDefault();
+
+          const isExpanded = comboboxInput.getAttribute("aria-expanded") === "true";
+
+          setExpanded(!isExpanded);
+        };
+
+        // Select the clicked option, update the field and ARIA state, then close.
+        const onComboboxOptionClick = (event) => {
+          const optionElement = event.target.closest("[role=option]");
+
+          if (!optionElement) {
+            return;
+          }
+
+          // Clear the previous selection before marking the new option selected.
+          const selectedOptions = comboboxListbox.querySelectorAll("[aria-selected=true]");
+          selectedOptions.forEach((selected) => selected.setAttribute("aria-selected", "false"));
+
+          optionElement.setAttribute("aria-selected", "true");
+          comboboxInput.value = optionElement.textContent.trim();
+          comboboxInput.setAttribute("aria-activedescendant", optionElement.id);
+
+          setExpanded(false);
+        };
+
+        // Close the listbox when a click lands outside the combobox.
+        const onDocumentClick = (event) => {
+          const isInsideCombobox = Boolean(event.target.closest("#demo-combobox"));
+
+          if (!isInsideCombobox) {
+            setExpanded(false);
+          }
+        };
+
+        comboboxInput.addEventListener("click", onComboboxToggle);
+        comboboxListbox.addEventListener("click", onComboboxOptionClick);
+        document.addEventListener("click", onDocumentClick);
+      }
+
+      /**
+       * Cancels the demo form submission so the page does not navigate.
+       *
+       * @param {Event} event The submit event.
+       * @returns {void}
+       */
+      function onDemoFormSubmit(event) {
+        // Prevent the default navigation; the recorder still observes the submit.
+        event.preventDefault();
+      }
+
+      /**
+       * Reloads the page so the recorder emits an UpdatePage navigation event.
+       *
+       * @param {Event} event The click event.
+       * @returns {void}
+       */
+      function onReloadButtonClick(event) {
+        event.preventDefault();
+
+        globalScope.location.reload();
+      }
+
+      /**
+       * Opens the test page in a new tab.
+       *
+       * @param {Event} event The click event.
+       * @returns {void}
+       */
+      function onOpenNewTabClick(event) {
+        event.preventDefault();
+
+        globalScope.open("recorder-test.html", "_blank");
+      }
+
+      /**
+       * Opens the test page in a new browser window.
+       *
+       * @param {Event} event The click event.
+       * @returns {void}
+       */
+      function onOpenNewWindowClick(event) {
+        event.preventDefault();
+
+        globalScope.open("recorder-test.html", "_blank", "popup,width=900,height=700");
+      }
+
+      /**
+       * Wires the full (top-document) view: frames, shadow DOM, combobox, and buttons.
+       *
+       * @returns {void}
+       */
+      function startFullView() {
+        // Reveal the full view and remove the unused framed view from the document.
+        const frameView = document.getElementById("frame-view");
+
+        if (frameView) {
+          frameView.remove();
+        }
+
+        // Build the shadow-DOM host, start the deferred iframes, and wire the combobox.
+        startShadowHost();
+        startFrames();
+        startCombobox();
+
+        // Wire the form, reload, and open-elsewhere controls.
+        const demoForm = document.getElementById("demo-form");
+        const reloadButton = document.getElementById("demo-reload-button");
+        const openTabButton = document.getElementById("demo-open-tab-button");
+        const openWindowButton = document.getElementById("demo-open-window-button");
+
+        demoForm.addEventListener("submit", onDemoFormSubmit);
+        reloadButton.addEventListener("click", onReloadButtonClick);
+        openTabButton.addEventListener("click", onOpenNewTabClick);
+        openWindowButton.addEventListener("click", onOpenNewWindowClick);
+      }
+
+      /**
+       * Wires the minimal framed view shown inside the same-origin iframe.
+       *
+       * @returns {void}
+       */
+      function startFrameView() {
+        // Reveal the framed view and remove the full view so its iframes never load,
+        // which prevents the page from recursively framing itself.
+        const fullView = document.getElementById("full-view");
+
+        if (fullView) {
+          fullView.remove();
+        }
+
+        const frameView = document.getElementById("frame-view");
+        frameView.hidden = false;
+      }
+
+      // Render the layout that matches the current view.
+      if (isFrameView) {
+        startFrameView();
+      } else {
+        startFullView();
+      }
+    })(window);
+  </script>
+</body>
+
+</html>

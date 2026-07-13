@@ -1,4 +1,6 @@
+using ChromiumPeek.Domain;
 using ChromiumPeek.Domain.Hubs;
+using ChromiumPeek.Domain.Middlewares;
 
 using CommandBridge;
 
@@ -16,8 +18,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
 
 using System;
-using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -113,7 +113,7 @@ builder.Services.AddSwaggerGen(i =>
     // Define a Swagger document named "v4" with title and version information.
     i.SwaggerDoc(
         name: $"v4",
-        info: new OpenApiInfo { Title = "G4™ Hub Controllers", Version = $"v4" });
+        info: new OpenApiInfo { Title = "G4ï¿½ Hub Controllers", Version = $"v4" });
 
     // Order API actions in the Swagger UI by HTTP method for better organization.
     i.OrderActionsBy(a => a.HttpMethod);
@@ -146,6 +146,9 @@ builder.Services.AddCors(options =>
         .SetIsOriginAllowed(origin =>
             origins.Contains(origin)
             || (origin != null && origin.StartsWith("vscode-webview://"))
+            // Allow the Chromium recorder extension to open its WebSocket. Extension
+            // origins are chrome-extension://<id> and must pass SignalR origin validation.
+            || (origin != null && origin.StartsWith("chrome-extension://"))
         )
         .AllowAnyMethod()
         .AllowAnyHeader()
@@ -206,6 +209,18 @@ builder.Services.AddHttpClient();
 
 #region *** Dependencies  ***
 builder.Services.AddTransient<IChromiumPeekRepository, ChromiumPeekRepository>();
+
+// Register the peek launcher as a singleton so its tracked-instance registry (used to stop
+// only browsers this service started) persists across requests.
+builder.Services.AddSingleton<IChromiumPeekLauncher, ChromiumPeekLauncher>();
+
+// Register the event capture service as a singleton (stateless; owns the broadcast of recorder
+// events pushed by the extension, mirroring the desktop UIA capture service's broadcast).
+builder.Services.AddSingleton<IChromiumEventCaptureService, ChromiumEventCaptureService>();
+
+// Register the domain aggregate as a transient facade over the launcher and repository, so
+// consumers inject a single IChromiumPeekDomain instead of each service individually.
+builder.Services.AddTransient<IChromiumPeekDomain, ChromiumPeekDomain>();
 #endregion
 
 #region *** Configuration ***
@@ -217,6 +232,10 @@ app.UseResponseCaching();
 
 // Add the cookie policy
 app.UseCookiePolicy();
+
+// Serve static files from wwwroot (for example the recorder test page at
+// /recorder-test.html) so the extension can be exercised against a local fixture.
+app.UseStaticFiles();
 
 // Add the routing and controller mapping to the application
 app.UseRouting();
@@ -242,74 +261,9 @@ app.MapControllers();
 app.MapHub<ChromiumPeekHub>($"/hub/v4/g4/peek").RequireCors("CorsPolicy");
 #endregion
 
-StartChromiumWithExtension();
+// The browser is launched and stopped on demand by the client over SignalR, by invoking
+// the ChromiumPeekHub StartRecorder/StopRecorder methods on the /hub/v4/g4/peek hub, so
+// there is no automatic startup launch and no REST control endpoint here.
 
 // Start the application and wait for it to finish.
 await app.RunAsync();
-
-
-static void StartChromiumWithExtension()
-{
-    var baseDir = AppContext.BaseDirectory;
-    var extensionDir = Path.Combine(baseDir, "ChromiumExtension");
-
-    if (!Directory.Exists(extensionDir))
-    {
-        Console.WriteLine($"[ChromiumPeek] Extension folder not found: {extensionDir}");
-        return;
-    }
-
-    var tempProfileRoot = Path.Combine(Path.GetTempPath(), "ChromiumPeek");
-    Directory.CreateDirectory(tempProfileRoot);
-
-    var userDataDir = Path.Combine(tempProfileRoot, Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(userDataDir);
-
-    var browserCandidates = new[]
-    {
-        @"E:\G4\g4-sandbox-v2026.02.12.64\browsers\chrome\chrome.exe"
-    };
-
-    var browserPath = browserCandidates.FirstOrDefault(File.Exists);
-    if (browserPath is null)
-    {
-        Console.WriteLine("[ChromiumPeek] Could not find Chrome/Edge executable.");
-        return;
-    }
-
-    const int remoteDebuggingPort = 9222;
-    var initialUrl = "https://example.com"; // TODO: your app
-
-    var psi = new ProcessStartInfo
-    {
-        FileName = browserPath,
-        UseShellExecute = false,
-        CreateNoWindow = false
-    };
-
-    // No manual quotes needed anywhere here
-    psi.ArgumentList.Add($"--remote-debugging-port={remoteDebuggingPort}");
-   // psi.ArgumentList.Add($"--user-data-dir={userDataDir}");
-    psi.ArgumentList.Add($"--load-extension={extensionDir}");
-    // optional, once it's stable:
-    // psi.ArgumentList.Add($"--disable-extensions-except={extensionDir}");
-    psi.ArgumentList.Add("--no-first-run");
-    psi.ArgumentList.Add("--no-default-browser-check");
-    psi.ArgumentList.Add(initialUrl);
-
-    Console.WriteLine("[ChromiumPeek] Starting browser:");
-    Console.WriteLine("  " + psi.FileName);
-    foreach (var a in psi.ArgumentList)
-    {
-        Console.WriteLine("    " + a);
-    }
-
-    try
-    {
-        Process.Start(psi);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine("[ChromiumPeek] Failed to start browser: " + ex);
-    }
-}

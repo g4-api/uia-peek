@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <!-- Marks this as the launcher's bootstrap page. The recorder extension's content script
+         detects this marker, derives the hub from this page's origin, and points the browser at
+         the server that launched it instead of recording anything on this page. -->
+    <meta name="g4-recorder-bootstrap" content="1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>G4 Chromium Recorder</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            color: #e6e6e6;
+            background: #1e1e1e;
+        }
+
+        .panel {
+            text-align: center;
+            max-width: 32rem;
+            padding: 2rem;
+        }
+
+        .panel h1 {
+            font-size: 1.25rem;
+            margin: 0 0 0.75rem;
+        }
+
+        .panel p {
+            margin: 0;
+            opacity: 0.8;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="panel">
+        <h1>G4 Chromium Recorder is connected</h1>
+        <p>This browser is recording for the server that launched it. Navigate to the page you want
+            to record — your interactions will be captured automatically.</p>
+    </div>
+</body>
+
+</html>

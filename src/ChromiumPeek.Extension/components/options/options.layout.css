@@ -1,0 +1,108 @@
+/**
+ * Options layout for the G4 Chromium Recorder extension.
+ *
+ * Layout, sizing, spacing, and text layout only. No colours, borders as visual
+ * language, shadows, or other visual effects live here.
+ */
+body {
+  margin: 0;
+}
+
+.recorder-options {
+  display: block;
+  min-height: 100vh;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 5rem;
+  box-sizing: border-box;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.recorder-options__title {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+}
+
+.recorder-options__section {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+}
+
+.recorder-options__section-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.recorder-options__field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.recorder-options__label {
+  font-weight: 600;
+}
+
+.recorder-options__hint {
+  font-size: 0.75rem;
+}
+
+.recorder-options__input {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  box-sizing: border-box;
+  font-size: 0.875rem;
+}
+
+.recorder-options__control-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.recorder-options__events-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.recorder-options__events-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1.5rem;
+}
+
+.recorder-options__event {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.recorder-options__event-hint {
+  padding-left: 2.6rem;
+}
+
+.recorder-options__actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  box-sizing: border-box;
+}
+
+.recorder-options__button {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.recorder-options__status-message {
+  margin-left: auto;
+  font-size: 0.8125rem;
+}

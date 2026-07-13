@@ -26,4 +26,23 @@
 		<ProjectReference Include="..\ChromiumPeek.Domain\ChromiumPeek.Domain.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<!-- Force wwwroot files (the recorder test page) to copy into the build output so
+		     UseStaticFiles serves them when the app runs as the raw exe (Production), not
+		     only via the dev-time static web assets manifest. -->
+		<Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Link the Chromium recorder extension (sibling ChromiumPeek.Extension folder)
+		     into this project and copy it to the build output under ChromiumPeek.Extension
+		     so StartChromiumWithExtension can load it via the browser load-extension
+		     argument. The files live outside this project's directory, so the SDK's default
+		     content/code globs do not pick them up and no duplicate-item guards are needed. -->
+		<None Include="..\ChromiumPeek.Extension\**\*">
+			<Link>ChromiumPeek.Extension\%(RecursiveDir)%(Filename)%(Extension)</Link>
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
 </Project>
