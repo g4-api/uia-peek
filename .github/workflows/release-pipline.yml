@@ -94,10 +94,14 @@ jobs:
       shell: pwsh
       run: dotnet restore ${{ env.uiaPeekProjectName }}/${{ env.uiaPeekProjectName }}.csproj
 
+    # Add msbuild to PATH to ensure that MSBuild is available for the build and publish steps
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v2
+
     # Step to publish the project
     - name: Publish
       shell: pwsh
-      run: dotnet publish ${{ env.uiaPeekProjectName }}/${{ env.uiaPeekProjectName }}.csproj --configuration ${{ env.buildConfiguration }} --output ${{ env.binariesDirectory }}/${{ env.uiaPeekProjectName }}/publish
+      run: msbuild ${{ env.uiaPeekProjectName }}/${{ env.uiaPeekProjectName }}.csproj /t:Publish /p:Configuration=Release /p:PublishDir=${{ env.binariesDirectory }}/publish/
 
     # Step to create a build artifact
     - name: Create Build Artifact
