@@ -162,7 +162,7 @@ jobs:
         New-Item -Path "${{ env.artifactStagingDirectory }}" -ItemType Directory
         Compress-Archive `
             -Path ${{ env.binariesDirectory }}/${{ env.chromiumPeekProjectName }}/publish/* `
-            -DestinationPath ${{ env.artifactStagingDirectory }}/${{ env.chromiumPeekProjectName }}.${{ env.buildVersion }}.zip 
+            -DestinationPath ${{ env.artifactStagingDirectory }}/${{ env.chromiumPeekProjectName }}.${{ env.buildVersion }}-x64.zip 
 
     # Step to upload the build artifact
     - name: Upload a Build Artifact
