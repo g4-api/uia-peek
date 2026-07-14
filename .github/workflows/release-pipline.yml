@@ -98,6 +98,23 @@ jobs:
     - name: Add msbuild to PATH
       uses: microsoft/setup-msbuild@v2
 
+    # Step to set the UiaPeek version
+    - name: Set Version v${{ env.buildVersion }}
+      shell: pwsh
+      run: |
+        $filePath          = "${{ env.uiaPeekProjectName }}/Program.cs"
+        $tempVersion       = '"0000.00.00.0000"'
+        $version           = '"${{ env.buildVersion }}"'
+        $content           = Get-Content -LiteralPath $filePath -Raw -ErrorAction Stop
+        $placeholderCount  = ([regex]::Matches($content, [regex]::Escape($tempVersion))).Count
+
+        if ($placeholderCount -ne 1) {
+            throw "Expected exactly one version placeholder in '$filePath', but found $placeholderCount."
+        }
+
+        $newContent = $content.Replace($tempVersion, $version)
+        Set-Content -LiteralPath $filePath -Value $newContent -NoNewline
+
     # Step to publish the project
     - name: Publish
       shell: pwsh
@@ -149,6 +166,23 @@ jobs:
     - name: Restore Packages
       shell: pwsh
       run: dotnet restore ${{ env.chromiumPeekProjectName }}/${{ env.chromiumPeekProjectName }}.csproj
+
+    # Step to set the ChromiumPeek version
+    - name: Set Version v${{ env.buildVersion }}
+      shell: pwsh
+      run: |
+        $filePath          = "${{ env.chromiumPeekProjectName }}/Program.cs"
+        $tempVersion       = '"0000.00.00.0000"'
+        $version           = '"${{ env.buildVersion }}"'
+        $content           = Get-Content -LiteralPath $filePath -Raw -ErrorAction Stop
+        $placeholderCount  = ([regex]::Matches($content, [regex]::Escape($tempVersion))).Count
+
+        if ($placeholderCount -ne 1) {
+            throw "Expected exactly one version placeholder in '$filePath', but found $placeholderCount."
+        }
+
+        $newContent = $content.Replace($tempVersion, $version)
+        Set-Content -LiteralPath $filePath -Value $newContent -NoNewline
 
     # Step to publish the project
     - name: Publish
