@@ -24,9 +24,9 @@
 
     // The DOM event names the recorder binds, paired with the settings toggle key that
     // enables each one. Declared once here so the content script and the catalog agree.
-    // Typed text is NOT listed here: it is captured from debounced `input` events directly in
-    // the content script (see onTypingInput), not through this per-DOM-event descriptor path, so
-    // one SendKeys is emitted per field at typing time. `change` is intentionally not bound.
+    // Typed text is NOT listed here: trusted `input` events update a field session directly in
+    // the content script (see onTypingInput), outside this per-DOM-event descriptor path, so one
+    // SendKeys is emitted per field commit. `change` is intentionally not bound.
     const CATALOG_ENTRIES = [
         { domEventName: "click", settingKey: "click" },
         { domEventName: "dblclick", settingKey: "doubleClick" },
@@ -80,8 +80,9 @@
      *
      * @remarks
      * Compute-only. Each branch builds the value payload appropriate to its event family.
-     * Typed text (SendKeys) is not resolved here — it is captured from debounced `input`
-     * events in the content script via newSendKeysDescriptor, where password redaction applies.
+     * Typed text (SendKeys) is not resolved here — trusted `input` events update a field session
+     * in the content script, which calls newSendKeysDescriptor at commit time so password
+     * redaction applies before the event leaves the page.
      *
      * @param {object} options Descriptor inputs.
      * @param {Event} options.domEvent The DOM event being recorded.
@@ -120,9 +121,8 @@
         }
 
         // keydown/keyup are deferred placeholders: discrete key actions (Enter/Tab/Esc/arrows)
-        // are not implemented yet, so they emit nothing here. Typed text is captured separately
-        // from debounced `input` events in the content script, so `input` never reaches this
-        // resolver.
+        // are not implemented yet, so they emit nothing here. Typed text is tracked separately as
+        // a field session in the content script, so `input` never reaches this resolver.
         const isDeferredKeyEvent = domEventName === "keydown"
             || domEventName === "keyup";
 
@@ -300,8 +300,8 @@
      * Builds the SendKeys descriptor for a typed field's current text.
      *
      * @remarks
-     * Compute-only helper. Called by the content script's debounced typing capture with the
-     * field element (not a DOM event), so one SendKeys is emitted per field at typing time.
+     * Compute-only helper. Called by the content script when a typed field commits, using the
+     * field element rather than a DOM event so one SendKeys contains the final field-session value.
      * When redaction is enabled and the target is a password (or a field marked sensitive),
      * the text is masked so the secret never leaves the page.
      *
