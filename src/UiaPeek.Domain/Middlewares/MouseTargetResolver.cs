@@ -15,13 +15,13 @@ namespace UiaPeek.Domain.Middlewares
     /// </remarks>
     internal sealed class MouseTargetResolver
     {
-        #region *** Fields        ***
+        #region *** Fields       ***
         private readonly Dictionary<MouseButton, UiaChainModel> _pressedTargets = [];
         private readonly IUiaPeekRepository _repository;
         private readonly object _syncRoot = new();
         #endregion
 
-        #region *** Constructors  ***
+        #region *** Constructors ***
         /// <summary>
         /// Initializes a new instance of the <see cref="MouseTargetResolver"/> class.
         /// </summary>
@@ -29,17 +29,16 @@ namespace UiaPeek.Domain.Middlewares
         internal MouseTargetResolver(IUiaPeekRepository repository)
         {
             // Reject an incomplete resolver before it begins retaining input state.
-            if (repository == null)
-            {
-                throw new ArgumentNullException(paramName: nameof(repository));
-            }
+            ArgumentNullException.ThrowIfNull(
+                argument: repository,
+                paramName: nameof(repository));
 
             // Retain the repository used for press and orphan-release lookups.
             _repository = repository;
         }
         #endregion
 
-        #region *** Public Methods ***
+        #region *** Methods      ***
         /// <summary>
         /// Removes all retained press-time targets.
         /// </summary>
@@ -55,22 +54,43 @@ namespace UiaPeek.Domain.Middlewares
         /// <summary>
         /// Resolves and retains the target under a pressed mouse button.
         /// </summary>
+        /// <param name="request">The mouse button, coordinates, and optional pre-click chain.</param>
+        /// <returns>The pre-click chain when supplied, or the UIA chain found at the press coordinates.</returns>
+        internal UiaChainModel ResolveDown(MouseDownTargetRequest request)
+        {
+            // Require complete press context before selecting or retaining a target.
+            ArgumentNullException.ThrowIfNull(
+                argument: request,
+                paramName: nameof(request));
+
+            // Prefer the pre-dispatch hover chain so mouse-down UI mutations cannot change identity.
+            var chain = request.CapturedChain ?? _repository.Peek(request.X, request.Y);
+
+            // Replace stale state when a duplicate press arrives for the same button.
+            lock (_syncRoot)
+            {
+                _pressedTargets[request.Button] = chain;
+            }
+
+            return chain;
+        }
+
+        /// <summary>
+        /// Resolves and retains the target under a pressed mouse button using coordinate fallback.
+        /// </summary>
         /// <param name="button">The mouse button entering the pressed state.</param>
         /// <param name="x">The horizontal screen coordinate captured by the hook.</param>
         /// <param name="y">The vertical screen coordinate captured by the hook.</param>
         /// <returns>The UIA chain found at the press coordinates.</returns>
         internal UiaChainModel ResolveDown(MouseButton button, int x, int y)
         {
-            // Materialize the target while the clicked UI remains available.
-            var chain = _repository.Peek(x, y);
-
-            // Replace stale state when a duplicate press arrives for the same button.
-            lock (_syncRoot)
+            // Route legacy callers through the complete request-based resolution path.
+            return ResolveDown(new MouseDownTargetRequest
             {
-                _pressedTargets[button] = chain;
-            }
-
-            return chain;
+                Button = button,
+                X = x,
+                Y = y
+            });
         }
 
         /// <summary>
@@ -112,11 +132,39 @@ namespace UiaPeek.Domain.Middlewares
     }
 
     /// <summary>
+    /// Contains the complete producer context used to resolve a pressed mouse target.
+    /// </summary>
+    internal sealed class MouseDownTargetRequest
+    {
+        #region *** Properties   ***
+        /// <summary>
+        /// Gets the mouse button entering the pressed state.
+        /// </summary>
+        internal MouseButton Button { get; init; }
+
+        /// <summary>
+        /// Gets the pre-dispatch UIA chain selected by the mouse hook, or null when unavailable.
+        /// </summary>
+        internal UiaChainModel CapturedChain { get; init; }
+
+        /// <summary>
+        /// Gets the horizontal screen coordinate captured by the hook.
+        /// </summary>
+        internal int X { get; init; }
+
+        /// <summary>
+        /// Gets the vertical screen coordinate captured by the hook.
+        /// </summary>
+        internal int Y { get; init; }
+        #endregion
+    }
+
+    /// <summary>
     /// Contains the resolved mouse target and its resolution source.
     /// </summary>
     internal readonly struct MouseTargetResolution
     {
-        #region *** Constructors  ***
+        #region *** Constructors ***
         /// <summary>
         /// Initializes a new instance of the <see cref="MouseTargetResolution"/> structure.
         /// </summary>
@@ -129,7 +177,7 @@ namespace UiaPeek.Domain.Middlewares
         }
         #endregion
 
-        #region *** Properties    ***
+        #region *** Properties   ***
         /// <summary>
         /// Gets the resolved UIA target chain.
         /// </summary>

@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 
+using System;
 using System.Threading.Tasks;
 
 using Common.Domain.Models;
@@ -13,8 +14,30 @@ namespace UiaPeek.Domain.Hubs
     /// </summary>
     public class UiaPeekHub(IUiaPeekRepository repository) : Hub
     {
+        // Shared process state gates hover sampling and separates consecutive recording sessions.
+        private readonly RecorderConnectionState _connectionState = RecorderConnectionState.Instance;
+
         // Repository used for querying UIA elements at coordinates.
         private readonly IUiaPeekRepository _repository = repository;
+
+        /// <inheritdoc />
+        public override async Task OnConnectedAsync()
+        {
+            // Complete the SignalR connection before exposing it as an active recording consumer.
+            await base.OnConnectedAsync().ConfigureAwait(false);
+
+            // Start or join the current capture generation after the client can receive events.
+            _connectionState.AddConnection();
+        }
+
+        /// <inheritdoc />
+        public override async Task OnDisconnectedAsync(Exception exception)
+        {
+            // Remove the client before completing teardown so hover work stops with the final consumer.
+            _connectionState.RemoveConnection();
+
+            await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
+        }
 
         // Sends a heartbeat message to the caller.
         // This can be used by clients to verify the connection is alive.

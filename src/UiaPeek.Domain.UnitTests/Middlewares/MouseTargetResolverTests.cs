@@ -73,6 +73,32 @@ namespace UiaPeek.Domain.UnitTests.Middlewares
             Assert.AreEqual(1, repository.PointPeekCount);
         }
 
+        [TestMethod(DisplayName = "Verify that a pre-resolved press target avoids post-click repository lookup")]
+        public void MouseTargetPreResolvedPressAvoidsRepositoryTest()
+        {
+            // Arrange: provide an Edit hover target and a post-click Close fallback that must remain unused.
+            var editChain = NewChain("edit");
+            var closeChain = NewChain("close");
+            var repository = new FakeUiaPeekRepository(closeChain);
+            var resolver = new MouseTargetResolver(repository);
+
+            // Act: resolve Down from the pre-dispatch chain and then consume it on Up.
+            var downChain = resolver.ResolveDown(new MouseDownTargetRequest
+            {
+                Button = MouseButton.Left,
+                CapturedChain = editChain,
+                X = 10,
+                Y = 20
+            });
+            var upResolution = resolver.ResolveUp(MouseButton.Left, x: 10, y: 20);
+
+            // Assert: verify that both transitions retain Edit without observing post-click Close.
+            Assert.AreSame(editChain, downChain);
+            Assert.AreSame(editChain, upResolution.Chain);
+            Assert.IsFalse(upResolution.UsedFallback);
+            Assert.AreEqual(0, repository.PointPeekCount);
+        }
+
         [TestMethod(DisplayName = "Verify that a release consumes its retained press target")]
         public void MouseTargetReleaseConsumesPressTargetTest()
         {

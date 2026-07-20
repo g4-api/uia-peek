@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -52,6 +53,10 @@ namespace UiaPeek.Domain.Middlewares
         [DllImport("user32.dll", SetLastError = true)]
         private static extern sbyte GetMessage(out Message lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
 
+        // Retrieves the cursor position in physical desktop coordinates for stationary hover refresh.
+        [DllImport("user32.dll")]
+        private static extern bool GetPhysicalCursorPos(out Point lpPoint);
+
         // Retrieves a module handle for the specified module.
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
@@ -86,6 +91,11 @@ namespace UiaPeek.Domain.Middlewares
         #endregion
 
         #region *** Constants ***
+        private const int HoverBoundsTolerancePixels = 2;
+        private const int HoverMaximumAgeMilliseconds = 1000;
+        private const int HoverMinimumResolutionIntervalMilliseconds = 50;
+        private const int HoverRefreshIntervalMilliseconds = 250;
+
         // Amount that the mouse wheel reports per notch (used to normalize wheel deltas)
         private const int WHEEL_DELTA = 120;
 
@@ -145,11 +155,17 @@ namespace UiaPeek.Domain.Middlewares
         // the corresponding KeyUp event can reuse the exact same string.
         private static readonly Dictionary<uint, string> _keysLog = [];
 
+        // Shared hub state prevents hover resolution when no recorder client can consume events.
+        private readonly RecorderConnectionState _connectionState = RecorderConnectionState.Instance;
+
         // Thread-safe queue for captured input events awaiting processing.
         private readonly ConcurrentQueue<EventRecord> _eventsQueue = new();
 
         // SignalR hub context for broadcasting captured input events to connected clients.
         private readonly IHubContext<UiaPeekHub> _hub;
+
+        // Indicates that a newer pointer observation is waiting for background UIA resolution.
+        private int _isHoverPending;
 
         // Delegate reference for the low-level keyboard hook callback.  
         // Must be kept alive to prevent garbage collection while the hook is active.
@@ -158,12 +174,23 @@ namespace UiaPeek.Domain.Middlewares
         // Logger for diagnostics, error reporting, and lifecycle information.
         private readonly ILogger<UiaEventCaptureService> _logger;
 
+        // Monotonic timestamp of the most recent hover-resolution attempt.
+        private long _lastHoverResolutionTimestamp;
+
+        // Session generation for which the hover cache was last initialized.
+        private long _lastHoverSessionGeneration;
+
         // Resolver that preserves the press-time UIA target for each mouse button.
         private readonly MouseTargetResolver _mouseTargetResolver;
 
         // Delegate reference for the low-level mouse hook callback.  
         // Must be kept alive to prevent garbage collection while the hook is active.
         private HookProcess _mouseCallback;
+
+        // Atomically published pre-click target cache consumed by mouse-down callbacks.
+        private readonly MouseTargetSnapshotStore _mouseTargetSnapshotStore = new(
+            maximumAgeMilliseconds: HoverMaximumAgeMilliseconds,
+            boundsTolerancePixels: HoverBoundsTolerancePixels);
 
         // Repository used to resolve the current UI element chain at the time of an event.
         private readonly IUiaPeekRepository _repository;
@@ -281,6 +308,7 @@ namespace UiaPeek.Domain.Middlewares
                 }
 
                 // Release short-lived input state after the hook lifecycle ends.
+                _mouseTargetSnapshotStore.Clear();
                 _mouseTargetResolver.Clear();
             },
             cancellationToken: stoppingToken,
@@ -325,14 +353,16 @@ namespace UiaPeek.Domain.Middlewares
                 return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
             }
 
-            // Explicitly ignore mouse move events (too frequent, not useful for logging).
+            // Publish only the latest move observation so hover tracking never enters the recording stream.
             if (wParam == WM_MOUSEMOVE)
             {
+                SetMouseObservation();
                 return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
             }
 
-            // Extract mouse event details from the pointer.
+            // Extract native data only for recordable messages after the high-frequency move fast path.
             var mouse = Marshal.PtrToStructure<MouseHook>(lParam);
+            var monotonicTimestamp = Stopwatch.GetTimestamp();
 
             // Build a unified event record for the captured mouse event.
             var eventRecord = EventRecord.ConvertFromMouse(
@@ -340,6 +370,25 @@ namespace UiaPeek.Domain.Middlewares
                 nCode,
                 wParam,
                 timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+            // Attach a pre-dispatch chain to button-down events using only immutable in-memory state.
+            if (TestMouseButtonDown(wParam))
+            {
+                var snapshotResolution = _mouseTargetSnapshotStore.Resolve(new MouseTargetSnapshotRequest
+                {
+                    CaptureActive = _connectionState.CaptureActive,
+                    CurrentTimestamp = monotonicTimestamp,
+                    SessionGeneration = _connectionState.SessionGeneration,
+                    X = mouse.pt.X,
+                    Y = mouse.pt.Y
+                });
+
+                eventRecord.CapturedMouseTarget = snapshotResolution.Accepted
+                    ? snapshotResolution.Snapshot.Chain
+                    : null;
+                eventRecord.MouseSnapshotAgeMilliseconds = snapshotResolution.AgeMilliseconds;
+                eventRecord.MouseSnapshotStatus = snapshotResolution.Status;
+            }
 
             // Enqueue the event for processing in the background task.
             _eventsQueue.Enqueue(eventRecord);
@@ -349,6 +398,23 @@ namespace UiaPeek.Domain.Middlewares
 
             // Continue the hook chain.
             return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+        }
+
+        // Publishes one coalesced pointer observation for background UIA resolution.
+        // The method performs no UIA work and returns immediately when no recorder is connected.
+        private void SetMouseObservation()
+        {
+            // Avoid allocation and worker wakeups when no active session can consume a snapshot.
+            if (!_connectionState.CaptureActive)
+            {
+                return;
+            }
+
+            // Collapse every movement burst into a single worker-owned current-position lookup.
+            Interlocked.Exchange(ref _isHoverPending, 1);
+
+            // Wake the worker so it can resolve the newest point without broadcasting a mouse-move event.
+            _signal.Set();
         }
 
         // Resolves a human-readable string for a given keyboard event.
@@ -461,7 +527,7 @@ namespace UiaPeek.Domain.Middlewares
                 // Build a structured event model with context (clicks, button up/down, etc.).
                 var clickMessage = new UiaEventModel
                 {
-                    Chain = ResolveMouseTarget(eventRecord.WParam, mouse.pt.X, mouse.pt.Y),
+                    Chain = ResolveMouseTarget(eventRecord),
                     Event = GetMouseEventName(eventRecord.WParam),
                     Timestamp = eventRecord.Timestamp,
                     Type = "Mouse",
@@ -526,32 +592,79 @@ namespace UiaPeek.Domain.Middlewares
 
         // Resolves button releases from their press-time targets so transient UI
         // elements remain stable after the application reacts to the release.
-        private UiaChainModel ResolveMouseTarget(IntPtr message, int x, int y)
+        private UiaChainModel ResolveMouseTarget(EventRecord eventRecord)
         {
-            switch (message)
+            var mouse = eventRecord.EventData.Mouse;
+
+            switch (eventRecord.WParam)
             {
                 case WM_LBUTTONDOWN:
-                    return _mouseTargetResolver.ResolveDown(MouseButton.Left, x, y);
+                    return ResolveMouseDown(MouseButton.Left, eventRecord);
 
                 case WM_MBUTTONDOWN:
-                    return _mouseTargetResolver.ResolveDown(MouseButton.Middle, x, y);
+                    return ResolveMouseDown(MouseButton.Middle, eventRecord);
 
                 case WM_RBUTTONDOWN:
-                    return _mouseTargetResolver.ResolveDown(MouseButton.Right, x, y);
+                    return ResolveMouseDown(MouseButton.Right, eventRecord);
 
                 case WM_LBUTTONUP:
-                    return ResolveMouseUp(MouseButton.Left, x, y);
+                    return ResolveMouseUp(MouseButton.Left, mouse.pt.X, mouse.pt.Y);
 
                 case WM_MBUTTONUP:
-                    return ResolveMouseUp(MouseButton.Middle, x, y);
+                    return ResolveMouseUp(MouseButton.Middle, mouse.pt.X, mouse.pt.Y);
 
                 case WM_RBUTTONUP:
-                    return ResolveMouseUp(MouseButton.Right, x, y);
+                    return ResolveMouseUp(MouseButton.Right, mouse.pt.X, mouse.pt.Y);
 
                 default:
                     // Preserve coordinate-based resolution for non-button mouse events.
-                    return _repository.Peek(x, y);
+                    return _repository.Peek(mouse.pt.X, mouse.pt.Y);
             }
+        }
+
+        // Selects the hook-attached hover chain before falling back to worker-time coordinate resolution.
+        private UiaChainModel ResolveMouseDown(MouseButton button, EventRecord eventRecord)
+        {
+            var mouse = eventRecord.EventData.Mouse;
+            var hasPreClickTarget = eventRecord.CapturedMouseTarget != null;
+            var queueDelayMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - eventRecord.Timestamp;
+
+            // Retain the selected target so the matching release cannot observe a post-click UI tree.
+            var chain = _mouseTargetResolver.ResolveDown(new MouseDownTargetRequest
+            {
+                Button = button,
+                CapturedChain = eventRecord.CapturedMouseTarget,
+                X = mouse.pt.X,
+                Y = mouse.pt.Y
+            });
+
+            // Report the target source and timing without changing the external recording-event contract.
+            if (hasPreClickTarget)
+            {
+                _logger.LogDebug(
+                    "Resolved {Button} mouse press from HoverSnapshot at ({X}, {Y}); " +
+                    "SnapshotAgeMs: {SnapshotAgeMs:F1}, QueueDelayMs: {QueueDelayMs}, Locator: {Locator}.",
+                    button,
+                    mouse.pt.X,
+                    mouse.pt.Y,
+                    eventRecord.MouseSnapshotAgeMilliseconds,
+                    queueDelayMilliseconds,
+                    chain?.Locator);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "Resolved {Button} mouse press from DownWorkerFallback at ({X}, {Y}); " +
+                    "SnapshotStatus: {SnapshotStatus}, QueueDelayMs: {QueueDelayMs}, Locator: {Locator}.",
+                    button,
+                    mouse.pt.X,
+                    mouse.pt.Y,
+                    eventRecord.MouseSnapshotStatus,
+                    queueDelayMilliseconds,
+                    chain?.Locator);
+            }
+
+            return chain;
         }
 
         // Resolves a button release and reports when its matching press was absent.
@@ -568,6 +681,15 @@ namespace UiaPeek.Domain.Middlewares
                     button,
                     x,
                     y);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "Resolved {Button} mouse release from PairedRelease at ({X}, {Y}); Locator: {Locator}.",
+                    button,
+                    x,
+                    y,
+                    resolution.Chain?.Locator);
             }
 
             return resolution.Chain;
@@ -773,6 +895,12 @@ namespace UiaPeek.Domain.Middlewares
             _ => $"msg=0x{wParam:X}"
         };
 
+        // Tests whether a native mouse message begins a button transition that needs a pre-click target.
+        private static bool TestMouseButtonDown(IntPtr message)
+        {
+            return message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN || message == WM_RBUTTONDOWN;
+        }
+
         // Attempts to install a low-level Windows hook (e.g., keyboard or mouse).
         // Tries with the current module handle first, then falls back to using <c>IntPtr.Zero</c>.
         private static IntPtr InitializeWindowsHook(int idHook, HookProcess process, out int lastError)
@@ -802,6 +930,158 @@ namespace UiaPeek.Domain.Middlewares
 
             // Return the hook handle (or IntPtr.Zero if both attempts failed)
             return hook;
+        }
+
+        // Resolves one coalesced hover target on the existing event worker.
+        // Real input events retain priority, and snapshots are published only for a stable physical cursor point.
+        private void ResolveHoverTarget()
+        {
+            // Clear session-owned state once the final recorder client disconnects.
+            if (!_connectionState.CaptureActive)
+            {
+                if (_lastHoverSessionGeneration != 0)
+                {
+                    _mouseTargetSnapshotStore.Clear();
+                    _mouseTargetResolver.Clear();
+                    _lastHoverResolutionTimestamp = 0;
+                    _lastHoverSessionGeneration = 0;
+                    Interlocked.Exchange(ref _isHoverPending, 0);
+                }
+
+                return;
+            }
+
+            // Initialize a clean cache when the first client starts a new recording generation.
+            var sessionGeneration = _connectionState.SessionGeneration;
+            if (_lastHoverSessionGeneration != sessionGeneration)
+            {
+                _mouseTargetSnapshotStore.Clear();
+                _mouseTargetResolver.Clear();
+                _lastHoverResolutionTimestamp = 0;
+                _lastHoverSessionGeneration = sessionGeneration;
+                Interlocked.Exchange(ref _isHoverPending, 1);
+            }
+
+            // Combine movement-triggered sampling with a periodic refresh for a stationary pointer.
+            var currentTimestamp = Stopwatch.GetTimestamp();
+            var hasPendingMovement = Interlocked.Exchange(ref _isHoverPending, 0) == 1;
+            var elapsedMilliseconds = GetElapsedMilliseconds(_lastHoverResolutionTimestamp, currentTimestamp);
+            var isRefreshDue = _lastHoverResolutionTimestamp == 0 ||
+                elapsedMilliseconds >= HoverRefreshIntervalMilliseconds;
+
+            if (!hasPendingMovement && !isRefreshDue)
+            {
+                return;
+            }
+
+            // Throttle movement bursts while retaining a pending flag for the next worker iteration.
+            var isThrottled = _lastHoverResolutionTimestamp != 0 &&
+                elapsedMilliseconds < HoverMinimumResolutionIntervalMilliseconds;
+
+            if (isThrottled)
+            {
+                Interlocked.Exchange(ref _isHoverPending, 1);
+                return;
+            }
+
+            // Sample physical coordinates immediately before UIA lookup so scaling matches the repository contract.
+            if (!GetPhysicalCursorPos(out var pointBeforeResolution))
+            {
+                _lastHoverResolutionTimestamp = currentTimestamp;
+                _logger.LogDebug("Skipped hover target resolution because the physical cursor position was unavailable.");
+                return;
+            }
+
+            UiaChainModel chain;
+
+            try
+            {
+                // Materialize the complete chain off the hook thread before exposing it as a pre-click snapshot.
+                chain = _repository.Peek(pointBeforeResolution.X, pointBeforeResolution.Y);
+            }
+            catch (Exception exception)
+            {
+                // Isolate transient provider failures so later pointer observations remain serviceable.
+                _lastHoverResolutionTimestamp = Stopwatch.GetTimestamp();
+                _logger.LogDebug(
+                    exception,
+                    "Skipped hover target resolution at ({X}, {Y}).",
+                    pointBeforeResolution.X,
+                    pointBeforeResolution.Y);
+                return;
+            }
+
+            // Record completion time for freshness calculations and sampling throttling.
+            var completedTimestamp = Stopwatch.GetTimestamp();
+            _lastHoverResolutionTimestamp = completedTimestamp;
+
+            // Discard work completed after the recorder session ended or changed generations.
+            var isSessionCurrent = _connectionState.CaptureActive &&
+                _connectionState.SessionGeneration == sessionGeneration;
+
+            if (!isSessionCurrent)
+            {
+                return;
+            }
+
+            // Reject a sample when the pointer moved during UIA traversal and request a fresh observation.
+            var hasCurrentPoint = GetPhysicalCursorPos(out var pointAfterResolution);
+            var hasPointerMoved = !hasCurrentPoint ||
+                pointAfterResolution.X != pointBeforeResolution.X ||
+                pointAfterResolution.Y != pointBeforeResolution.Y;
+
+            if (hasPointerMoved)
+            {
+                Interlocked.Exchange(ref _isHoverPending, 1);
+                return;
+            }
+
+            // Extract serialized trigger geometry now so hook-time selection performs no path traversal or COM work.
+            var trigger = chain?.Path?.FindLast(node => node != null && node.IsTriggerElement);
+            var bounds = trigger?.Bounds;
+            var hasValidBounds = bounds != null &&
+                double.IsFinite(bounds.Left) &&
+                double.IsFinite(bounds.Top) &&
+                double.IsFinite(bounds.Width) &&
+                double.IsFinite(bounds.Height) &&
+                bounds.Width > 0 &&
+                bounds.Height > 0;
+            var hasLocator = chain != null &&
+                (!string.IsNullOrWhiteSpace(chain.Locator) || !string.IsNullOrWhiteSpace(chain.FallbackLocator));
+
+            if (!hasValidBounds || !hasLocator)
+            {
+                _logger.LogTrace(
+                    "Ignored incomplete hover target at ({X}, {Y}); locator or trigger bounds were unavailable.",
+                    pointBeforeResolution.X,
+                    pointBeforeResolution.Y);
+                return;
+            }
+
+            // Publish the completed chain atomically for pre-dispatch selection by the next mouse-down callback.
+            _mouseTargetSnapshotStore.Set(new MouseTargetSnapshot
+            {
+                CapturedAtTimestamp = completedTimestamp,
+                Chain = chain,
+                SessionGeneration = sessionGeneration,
+                TargetHeight = bounds.Height,
+                TargetLeft = bounds.Left,
+                TargetTop = bounds.Top,
+                TargetWidth = bounds.Width,
+                X = pointBeforeResolution.X,
+                Y = pointBeforeResolution.Y
+            });
+        }
+
+        // Converts monotonic timestamp units to elapsed milliseconds without using wall-clock time.
+        private static double GetElapsedMilliseconds(long startTimestamp, long endTimestamp)
+        {
+            if (startTimestamp == 0)
+            {
+                return double.PositiveInfinity;
+            }
+
+            return (endTimestamp - startTimestamp) * 1000.0 / Stopwatch.Frequency;
         }
 
         // Starts the background worker that waits for a signal and drains the events queue,
@@ -863,6 +1143,9 @@ namespace UiaPeek.Domain.Middlewares
                                 eventRecord.EventType, eventRecord.Timestamp);
                         }
                     }
+
+                    // Resolve at most one coalesced hover observation after all real input events are serviced.
+                    ResolveHoverTarget();
                 }
             }
 
@@ -900,7 +1183,7 @@ namespace UiaPeek.Domain.Middlewares
         }
         #endregion
 
-        #region *** Structs   ***
+        #region *** Nested Types ***
         private enum EventType : byte { Mouse = 1, Keyboard = 2 }
 
         [StructLayout(LayoutKind.Explicit)]
@@ -1044,6 +1327,11 @@ namespace UiaPeek.Domain.Middlewares
         private struct EventRecord
         {
             /// <summary>
+            /// The pre-dispatch mouse target selected by the hook, or null when unavailable.
+            /// </summary>
+            public UiaChainModel CapturedMouseTarget;
+
+            /// <summary>
             /// The raw data associated with the event.
             /// This object may contain metadata, input parameters,
             /// or serialized information relevant to event handling logic.
@@ -1061,6 +1349,16 @@ namespace UiaPeek.Domain.Middlewares
             /// Commonly used in Windows hook callbacks to store extra parameters (e.g., mouse position, key code).
             /// </summary>
             public IntPtr LParam;
+
+            /// <summary>
+            /// The age of the inspected hover snapshot when this mouse event was captured.
+            /// </summary>
+            public double MouseSnapshotAgeMilliseconds;
+
+            /// <summary>
+            /// The producer-internal status of pre-click snapshot selection.
+            /// </summary>
+            public MouseTargetSnapshotStatus MouseSnapshotStatus;
 
             /// <summary>
             /// The hook code that indicates the type of hook event received.
