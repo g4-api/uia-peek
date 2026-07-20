@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+using Common.Domain.Models;
+
 using UiaPeek.Domain.Models;
 
 namespace UiaPeek.Domain.Middlewares
@@ -91,6 +93,40 @@ namespace UiaPeek.Domain.Middlewares
                 X = x,
                 Y = y
             });
+        }
+
+        /// <summary>
+        /// Resolves the pointer offset from the top-left corner of a UIA chain's trigger element.
+        /// </summary>
+        /// <param name="chain">The resolved UIA chain containing the trigger element geometry.</param>
+        /// <param name="x">The horizontal physical screen coordinate captured by the mouse hook.</param>
+        /// <param name="y">The vertical physical screen coordinate captured by the mouse hook.</param>
+        /// <returns>The calculated pixel offset, or zero on both axes when valid geometry is unavailable.</returns>
+        internal static RecorderOffsetModel ResolveOffset(UiaChainModel chain, int x, int y)
+        {
+            // Select the explicitly marked trigger so ancestor geometry cannot shift the recorded click point.
+            var trigger = chain?.Path?.FindLast(node => node != null && node.IsTriggerElement);
+            var bounds = trigger?.Bounds;
+            var isValidBounds = bounds != null &&
+                double.IsFinite(bounds.Left) &&
+                double.IsFinite(bounds.Top) &&
+                double.IsFinite(bounds.Width) &&
+                double.IsFinite(bounds.Height) &&
+                bounds.Width > 0 &&
+                bounds.Height > 0;
+
+            // Preserve the shared zero default when UIA cannot provide a usable target rectangle.
+            if (!isValidBounds)
+            {
+                return new RecorderOffsetModel();
+            }
+
+            // Convert UIA's double rectangle coordinates to integer replay offsets without clamping edge clicks.
+            return new RecorderOffsetModel
+            {
+                X = (int)Math.Round(x - bounds.Left, MidpointRounding.AwayFromZero),
+                Y = (int)Math.Round(y - bounds.Top, MidpointRounding.AwayFromZero)
+            };
         }
 
         /// <summary>

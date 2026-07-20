@@ -56,6 +56,48 @@ namespace UiaPeek.Domain.UnitTests.Middlewares
             Assert.AreEqual(2, repository.PointPeekCount);
         }
 
+        [TestMethod(DisplayName = "Verify that invalid trigger bounds retain the zero offset default")]
+        public void MouseTargetOffsetInvalidBoundsReturnsZeroTest()
+        {
+            // Arrange: provide a located chain without usable trigger geometry.
+            var chain = NewChain("missing-bounds");
+
+            // Act: resolve the relative point without invoking UIA or mutating the chain.
+            var offset = MouseTargetResolver.ResolveOffset(chain, x: 140, y: 220);
+
+            // Assert: verify that incomplete geometry preserves the shared contract default.
+            Assert.AreEqual(0, offset.X);
+            Assert.AreEqual(0, offset.Y);
+        }
+
+        [TestMethod(DisplayName = "Verify that offset calculation supports negative desktop coordinates")]
+        public void MouseTargetOffsetNegativeDesktopCoordinatesTest()
+        {
+            // Arrange: place the trigger on a monitor whose physical desktop origin is negative.
+            var chain = NewTargetChain(left: -500.5, top: -300.5);
+
+            // Act: resolve the pointer displacement from the trigger's top-left corner.
+            var offset = MouseTargetResolver.ResolveOffset(chain, x: -450, y: -275);
+
+            // Assert: verify deterministic rounding after subtracting coordinates in the same physical space.
+            Assert.AreEqual(51, offset.X);
+            Assert.AreEqual(26, offset.Y);
+        }
+
+        [TestMethod(DisplayName = "Verify that offset calculation uses the trigger element bounds")]
+        public void MouseTargetOffsetUsesTriggerBoundsTest()
+        {
+            // Arrange: provide one target rectangle and a pointer position inside it.
+            var chain = NewTargetChain(left: 100, top: 200);
+
+            // Act: resolve the pointer displacement from the rectangle origin.
+            var offset = MouseTargetResolver.ResolveOffset(chain, x: 142, y: 217);
+
+            // Assert: verify that the offset records the exact element-relative click location.
+            Assert.AreEqual(42, offset.X);
+            Assert.AreEqual(17, offset.Y);
+        }
+
         [TestMethod(DisplayName = "Verify that an orphaned mouse release uses coordinate fallback")]
         public void MouseTargetOrphanedReleaseUsesFallbackTest()
         {
@@ -166,6 +208,29 @@ namespace UiaPeek.Domain.UnitTests.Middlewares
             return new UiaChainModel
             {
                 Locator = locator
+            };
+        }
+
+        // Creates a single-trigger chain with explicit geometry so offset tests remain independent
+        // from UIA COM providers and deterministic across desktop environments.
+        private static UiaChainModel NewTargetChain(double left, double top)
+        {
+            return new UiaChainModel
+            {
+                Path =
+                [
+                    new UiaNodeModel
+                    {
+                        Bounds = new UiaNodeModel.BoundsRectangle
+                        {
+                            Height = 100,
+                            Left = left,
+                            Top = top,
+                            Width = 300
+                        },
+                        IsTriggerElement = true
+                    }
+                ]
             };
         }
 
