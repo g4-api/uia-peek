@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -151,10 +150,6 @@ namespace UiaPeek.Domain.Middlewares
         #endregion
 
         #region *** Fields    ***
-        // Cache of pressed keys: stores the resolved key text on KeyDown so that
-        // the corresponding KeyUp event can reuse the exact same string.
-        private static readonly Dictionary<uint, string> _keysLog = [];
-
         // Shared hub state prevents hover resolution when no recorder client can consume events.
         private readonly RecorderConnectionState _connectionState = RecorderConnectionState.Instance;
 
@@ -171,11 +166,17 @@ namespace UiaPeek.Domain.Middlewares
         // Must be kept alive to prevent garbage collection while the hook is active.
         private HookProcess _keyboardCallback;
 
+        // Resolver that preserves target identity and key text from first Down through matching Up.
+        private readonly KeyboardTargetResolver _keyboardTargetResolver;
+
         // Logger for diagnostics, error reporting, and lifecycle information.
         private readonly ILogger<UiaEventCaptureService> _logger;
 
         // Monotonic timestamp of the most recent hover-resolution attempt.
         private long _lastHoverResolutionTimestamp;
+
+        // Session generation that owns the currently retained keyboard press state.
+        private long _lastKeyboardSessionGeneration;
 
         // Session generation for which the hover cache was last initialized.
         private long _lastHoverSessionGeneration;
@@ -215,6 +216,7 @@ namespace UiaPeek.Domain.Middlewares
             _hub = hub ?? throw new ArgumentNullException(nameof(hub));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+            _keyboardTargetResolver = new KeyboardTargetResolver(repository);
             _mouseTargetResolver = new MouseTargetResolver(repository);
 
             // Create a new CancellationTokenSource to control background worker lifetime.
@@ -308,6 +310,7 @@ namespace UiaPeek.Domain.Middlewares
                 }
 
                 // Release short-lived input state after the hook lifecycle ends.
+                _keyboardTargetResolver.Clear();
                 _mouseTargetSnapshotStore.Clear();
                 _mouseTargetResolver.Clear();
             },
@@ -465,46 +468,63 @@ namespace UiaPeek.Domain.Middlewares
                 return;
             }
 
-            // Extract keyboard event details from the pointer.
-            var kbd = eventRecord.EventData.Key;
+            // Initialize session ownership before resolving Down so a new generation cannot clear its fresh state.
+            if (!InitializeKeyboardTargetState())
+            {
+                return;
+            }
 
-            // Variable to hold the resolved key text.
-            string keyText;
+            // Derive one physical identity so target and text state use the same Down-to-Up boundary.
+            var keyboard = eventRecord.EventData.Key;
+            var identity = new KeyboardKeyIdentity(
+                virtualKey: keyboard.vkCode,
+                scanCode: keyboard.scanCode,
+                extended: (keyboard.flags & LLKHF_EXTENDED) != 0);
+            KeyboardTargetResolution targetResolution;
 
-            // Handle key down and key up events separately.
+            // Resolve the first press or consume its retained state according to the native transition.
             if (isKeyDown)
             {
-                // Compute human-readable key text on KeyDown.
-                keyText = ResolveKeyName(kbd);
-
-                // Cache the key text for use when the corresponding KeyUp occurs.
-                _keysLog[kbd.vkCode] = keyText;
+                // Resolve display text once so repeat and release events remain consistent with the first press.
+                var keyText = ResolveKeyName(keyboard);
+                targetResolution = _keyboardTargetResolver.ResolveDown(identity, keyText);
             }
             else
             {
-                // Attempt to retrieve cached text to ensure consistent KeyUp logging.
-                if (!_keysLog.TryGetValue(kbd.vkCode, out keyText))
-                {
-                    // Fallback: resolve text if no cached entry exists (rare case).
-                    keyText = ResolveKeyName(kbd);
-                }
-
-                // Remove the cached entry to keep memory clean.
-                _keysLog.Remove(kbd.vkCode);
+                // Reuse the first-press state and reserve focused lookup for an unmatched release.
+                targetResolution = _keyboardTargetResolver.ResolveUp(identity);
             }
+
+            // Preserve key-name fallback for sessions that begin after the physical press.
+            var isOrphanedRelease = targetResolution.Source == KeyboardTargetSource.OrphanFallback;
+            var resolvedKeyText = isOrphanedRelease
+                ? ResolveKeyName(keyboard)
+                : targetResolution.KeyText;
+
+            // Report the internal resolution path without extending the recorder event contract.
+            _logger.LogDebug(
+                "Resolved keyboard {Transition} from {Source}; VirtualKey: {VirtualKey}, ScanCode: {ScanCode}, " +
+                "Extended: {Extended}, Locator: {Locator}, PathCount: {PathCount}.",
+                isKeyDown ? "Down" : "Up",
+                targetResolution.Source,
+                identity.VirtualKey,
+                identity.ScanCode,
+                identity.Extended,
+                targetResolution.Chain?.Locator,
+                targetResolution.Chain?.Path?.Count ?? 0);
 
             // Build a structured event model with context.
             var message = new UiaEventModel
             {
-                Chain = _repository.Peek(),
+                Chain = targetResolution.Chain,
                 Event = isKeyDown ? "Key Down" : "Key Up",
                 Timestamp = eventRecord.Timestamp,
                 Type = "Keyboard",
                 Value = new
                 {
-                    ScanCode = kbd.scanCode,
-                    VirtualKey = kbd.vkCode,
-                    Key = keyText
+                    ScanCode = keyboard.scanCode,
+                    VirtualKey = keyboard.vkCode,
+                    Key = resolvedKeyText
                 }
             };
 
@@ -906,6 +926,30 @@ namespace UiaPeek.Domain.Middlewares
             return message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN || message == WM_RBUTTONDOWN;
         }
 
+        // Initializes keyboard state for the active recorder generation and rejects idle input.
+        // The worker owns generation transitions so retained presses never cross connection lifecycles.
+        private bool InitializeKeyboardTargetState()
+        {
+            // Remove previous-session state and skip UIA work when no recorder can consume the event.
+            if (!_connectionState.CaptureActive)
+            {
+                _keyboardTargetResolver.Clear();
+                _lastKeyboardSessionGeneration = 0;
+                return false;
+            }
+
+            // Reset state before the first keyboard event of each newly connected recorder generation.
+            var sessionGeneration = _connectionState.SessionGeneration;
+
+            if (_lastKeyboardSessionGeneration != sessionGeneration)
+            {
+                _keyboardTargetResolver.Clear();
+                _lastKeyboardSessionGeneration = sessionGeneration;
+            }
+
+            return true;
+        }
+
         // Attempts to install a low-level Windows hook (e.g., keyboard or mouse).
         // Tries with the current module handle first, then falls back to using <c>IntPtr.Zero</c>.
         private static IntPtr InitializeWindowsHook(int idHook, HookProcess process, out int lastError)
@@ -944,6 +988,14 @@ namespace UiaPeek.Domain.Middlewares
             // Clear session-owned state once the final recorder client disconnects.
             if (!_connectionState.CaptureActive)
             {
+                // Clear keyboard presses independently because they can precede hover-session initialization.
+                if (_lastKeyboardSessionGeneration != 0)
+                {
+                    _keyboardTargetResolver.Clear();
+                    _lastKeyboardSessionGeneration = 0;
+                }
+
+                // Clear pointer-owned state after the active hover generation ends.
                 if (_lastHoverSessionGeneration != 0)
                 {
                     _mouseTargetSnapshotStore.Clear();
