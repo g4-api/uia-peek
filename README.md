@@ -110,6 +110,7 @@ Both tools broadcast recorded interactions to connected clients using the Signal
 * `chain` — the element chain (locator + ordered `path` of nodes) where the event occurred.
 * `event` — the specific event name (e.g., `Down`, `Click`).
 * `machineName` — the machine that recorded the event.
+* `offset` — the pointer distance from the target rectangle's top-left corner, defaulting to `{ "x": 0, "y": 0 }`.
 * `timestamp` — Unix epoch **milliseconds**.
 * `type` — the event category (e.g., `Keyboard`, `Mouse`).
 * `value` — the event payload (e.g., the pressed key, or coordinates).
@@ -146,6 +147,7 @@ Both tools broadcast recorded interactions to connected clients using the Signal
             "trigger": "Focus"
         },
         "event": "Down",
+        "offset": { "x": 0, "y": 0 },
         "timestamp": 1757618366611,
         "type": "Keyboard",
         "value": { "scanCode": 30, "virtualKey": 65, "key": "a" }
@@ -154,6 +156,10 @@ Both tools broadcast recorded interactions to connected clients using the Signal
 ```
 
 > **Note:** The `path` array is ordered **top-down**. The **last element** is always the **target element** (the trigger) and carries more metadata than its ancestors to keep the payload compact. ChromiumPeek events use the same top-level shape; only the chain **node contents** differ (DOM elements instead of UIA elements).
+
+For UIA mouse events, `offset.x` is the captured pointer X coordinate minus the trigger bounds' `X`, and
+`offset.y` is the pointer Y coordinate minus the trigger bounds' `Y`. Chromium events currently retain the shared
+zero default until DOM-relative offset capture is enabled.
 
 ---
 

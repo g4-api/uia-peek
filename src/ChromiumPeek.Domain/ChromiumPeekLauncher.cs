@@ -7,11 +7,15 @@ using Microsoft.AspNetCore.SignalR;
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -136,18 +140,25 @@ namespace ChromiumPeek.Domain
                 startInfo.ArgumentList.Add(bootstrapUrl);
             }
 
-            // Launch the browser.
-            var process = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("Failed to start the browser process.");
+            // Launch the browser without activating its window, so it appears on-screen but does not
+            // steal foreground focus from the caller (for example the VS Code editor that started the
+            // recording). The window show-state is carried through STARTUPINFO to CreateProcess.
+            var startedProcessId = StartProcessNoActivate(startInfo.FileName, startInfo.ArgumentList);
 
-            // Capture the id used as the registry key.
-            var startedProcessId = process.Id;
-
-            // Register the process so it can be stopped later. Liveness is intentionally checked
-            // at stop time rather than through Process.Exited: Chromium's launched process can
+            // Register the launched process so it can be stopped later. Liveness is intentionally
+            // checked at stop time rather than through Process.Exited: Chromium's launched process can
             // exit while the browser keeps running, so its exit is not a reliable "browser closed"
-            // signal and must not auto-remove a still-live entry from the registry.
-            _startedProcesses[startedProcessId] = process;
+            // signal and must not auto-remove a still-live entry from the registry. A managed handle
+            // is resolved by id; when the initial process has already relaunched and exited, the
+            // graceful-close broadcast in StopAsync is what stops the browser.
+            try
+            {
+                _startedProcesses[startedProcessId] = Process.GetProcessById(startedProcessId);
+            }
+            catch (ArgumentException)
+            {
+                // The initial process already exited (Chromium relaunches into a separate process).
+            }
 
             return startedProcessId;
         }
@@ -284,6 +295,164 @@ namespace ChromiumPeek.Domain
             {
                 listener.Stop();
             }
+        }
+
+        // Launches a process with its window shown but not activated (SW_SHOWNOACTIVATE), so the new
+        // window is visible on-screen without stealing foreground focus from the caller. Returns the
+        // new process id.
+        private static int StartProcessNoActivate(string fileName, IReadOnlyList<string> arguments)
+        {
+            // Build a properly quoted command line: the executable followed by each argument.
+            var commandLine = BuildCommandLine(fileName, arguments);
+
+            // Ask the OS to show the new window without activating it so focus stays with the caller.
+            var startupInfo = new STARTUPINFO
+            {
+                cb = Marshal.SizeOf<STARTUPINFO>(),
+                dwFlags = STARTF_USESHOWWINDOW,
+                wShowWindow = SW_SHOWNOACTIVATE
+            };
+
+            var isCreated = CreateProcess(
+                null,
+                commandLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                false,
+                0,
+                IntPtr.Zero,
+                null,
+                ref startupInfo,
+                out var processInformation);
+
+            if (!isCreated)
+            {
+                var errorCode = Marshal.GetLastWin32Error();
+                throw new Win32Exception(errorCode, $"Failed to start the browser process (Win32 error {errorCode}).");
+            }
+
+            // The returned thread/process handles are not needed; the process is tracked by id.
+            CloseHandle(processInformation.hThread);
+            CloseHandle(processInformation.hProcess);
+
+            return processInformation.dwProcessId;
+        }
+
+        // Builds a Windows command line (executable plus arguments) with each token quoted per the
+        // CommandLineToArgvW rules, so paths with spaces and embedded quotes survive intact.
+        private static string BuildCommandLine(string fileName, IReadOnlyList<string> arguments)
+        {
+            var builder = new StringBuilder();
+            AppendArgument(builder, fileName);
+
+            foreach (var argument in arguments)
+            {
+                builder.Append(' ');
+                AppendArgument(builder, argument);
+            }
+
+            return builder.ToString();
+        }
+
+        // Appends one command-line argument, quoting and escaping it per the CommandLineToArgvW rules.
+        private static void AppendArgument(StringBuilder builder, string argument)
+        {
+            // Arguments without whitespace or quotes need no quoting.
+            if (argument.Length > 0 && argument.IndexOfAny(new char[] { ' ', '\t', '\n', '\v', '"' }) < 0)
+            {
+                builder.Append(argument);
+                return;
+            }
+
+            builder.Append('"');
+
+            for (var index = 0; ; index++)
+            {
+                var backslashes = 0;
+
+                while (index < argument.Length && argument[index] == '\\')
+                {
+                    index++;
+                    backslashes++;
+                }
+
+                if (index == argument.Length)
+                {
+                    // Escape trailing backslashes so they do not escape the closing quote.
+                    builder.Append('\\', backslashes * 2);
+                    break;
+                }
+
+                if (argument[index] == '"')
+                {
+                    // Escape the run of backslashes and the embedded quote.
+                    builder.Append('\\', backslashes * 2 + 1);
+                    builder.Append('"');
+                }
+                else
+                {
+                    builder.Append('\\', backslashes);
+                    builder.Append(argument[index]);
+                }
+            }
+
+            builder.Append('"');
+        }
+        #endregion
+
+        #region *** Interop   ***
+        // STARTUPINFO.dwFlags bit that makes wShowWindow take effect.
+        private const int STARTF_USESHOWWINDOW = 0x00000001;
+
+        // ShowWindow command that displays a window without activating it (keeps the caller's focus).
+        private const short SW_SHOWNOACTIVATE = 4;
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool CreateProcess(
+            string lpApplicationName,
+            string lpCommandLine,
+            IntPtr lpProcessAttributes,
+            IntPtr lpThreadAttributes,
+            bool bInheritHandles,
+            uint dwCreationFlags,
+            IntPtr lpEnvironment,
+            string lpCurrentDirectory,
+            ref STARTUPINFO lpStartupInfo,
+            out PROCESS_INFORMATION lpProcessInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct STARTUPINFO
+        {
+            public int cb;
+            public string lpReserved;
+            public string lpDesktop;
+            public string lpTitle;
+            public int dwX;
+            public int dwY;
+            public int dwXSize;
+            public int dwYSize;
+            public int dwXCountChars;
+            public int dwYCountChars;
+            public int dwFillAttribute;
+            public int dwFlags;
+            public short wShowWindow;
+            public short cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput;
+            public IntPtr hStdOutput;
+            public IntPtr hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public int dwProcessId;
+            public int dwThreadId;
         }
         #endregion
     }

@@ -11,7 +11,7 @@ the project and no script is ever fetched from a network at runtime.
 
 ## How it works
 
-```
+```text
 DOM event (any frame)
   -> content-script.js builds a RecorderEventModel (XPath locator + CSS, ARIA mapping)
   -> chrome.runtime message to the background service worker
@@ -28,13 +28,14 @@ the popup.
 
 The payload matches the UiaPeek/ChromiumPeek C# models (camelCase on the wire):
 
-- `RecorderEventModel` — `{ chain, event, machineName, timestamp, type, value }`
+- `RecorderEventModel` — `{ chain, event, machineName, offset, timestamp, type, value }`
 - `ChainModel` — `{ locator, path[], point, topWindow, trigger }`
 - `RecorderNodeModel` — `{ automationId, bounds, className, controlTypeId, controlType,
   frameworkId, isTopWindow, isTriggerElement, machine, name, patterns[], processId,
   properties, runtimeId[] }`
 - `BoundsRectangle` — `{ height, width, X, Y }` (X = Left, Y = Top)
 - `RecorderPointModel` — `{ X, Y }`
+- `RecorderOffsetModel` — `{ x, y }`, currently emitted as the shared Chromium default `{ x: 0, y: 0 }`
 
 ### DOM → contract mapping
 
@@ -111,7 +112,7 @@ All events can be toggled on the settings page.
 
 ## Project layout
 
-```
+```text
 manifest.json
 js/
   signalr.min.js        vendored official @microsoft/signalr 8.0.7 (offline)

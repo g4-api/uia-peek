@@ -6,7 +6,7 @@
  * and re-broadcast them to consumers byte-shaped like a UiaEventModel.
  *
  * Contract reference (camelCase on the wire unless noted):
- *   RecorderEventModel : { chain, event, machineName, timestamp, type, value }
+ *   RecorderEventModel : { chain, event, machineName, offset, timestamp, type, value }
  *   ChainModel         : { locator, path[], point, topWindow, trigger }
  *   RecorderNodeModel  : { automationId, bounds, className, controlTypeId, controlType,
  *                          frameworkId, isTopWindow, isTriggerElement, machine, name,
@@ -132,6 +132,27 @@
     }
 
     /**
+     * Creates an element-relative pointer offset in the shared recorder contract shape.
+     *
+     * @remarks
+     * Compute-only. Chromium currently publishes the zero default so every recorder exposes
+     * the shared field; DOM-relative calculation can populate the same model in a later change.
+     *
+     * @param {object} options Offset inputs.
+     * @param {number} options.xPosition Horizontal pixels from the target rectangle's left edge.
+     * @param {number} options.yPosition Vertical pixels from the target rectangle's top edge.
+     * @returns {object} The relative offset in the shared contract shape.
+     */
+    function newOffset(options) {
+        const offsetOptions = options || {};
+
+        return {
+            x: Math.round(offsetOptions.xPosition || 0),
+            y: Math.round(offsetOptions.yPosition || 0)
+        };
+    }
+
+    /**
      * Creates a screen-point object in the contract shape.
      *
      * @remarks
@@ -164,13 +185,14 @@
      * @param {object} options.chain The chain produced by newChain.
      * @param {string} options.event The specific event name (for example "Click").
      * @param {string} options.machineName The reporting machine/host name.
+     * @param {object} [options.offset] The element-relative pointer offset, or zero when omitted.
      * @param {number} options.timestamp The Unix epoch milliseconds when it occurred.
      * @param {string} options.type The event category (for example "Mouse").
      * @param {*} options.value The event payload value.
      * @returns {object} The recording event in contract shape.
      */
     function newRecordingEvent(options) {
-        const { chain, event, machineName, timestamp, type, value } = options;
+        const { chain, event, machineName, offset, timestamp, type, value } = options;
 
         // The C# contract types Timestamp as a 64-bit integer, but some sources (for
         // example webNavigation.timeStamp) report a fractional double. Round to a whole
@@ -184,6 +206,7 @@
             chain: chain || null,
             event: event || "",
             machineName: machineName || "",
+            offset: offset || newOffset(null),
             timestamp: resolvedTimestamp,
             type: type || "",
             value: value === undefined ? null : value
@@ -196,6 +219,7 @@
         newChain,
         newMachine,
         newNode,
+        newOffset,
         newPoint,
         newRecordingEvent
     };

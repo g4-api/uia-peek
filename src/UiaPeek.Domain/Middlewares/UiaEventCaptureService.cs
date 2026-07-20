@@ -524,11 +524,16 @@ namespace UiaPeek.Domain.Middlewares
             // Handle all mouse events EXCEPT wheel events (vertical/horizontal scroll).
             if (eventRecord.WParam != WM_MOUSEWHEEL && eventRecord.WParam != WM_MOUSEHWHEEL)
             {
-                // Build a structured event model with context (clicks, button up/down, etc.).
+                // Resolve the target once so the chain and its derived pointer offset describe the same UIA element.
+                var chain = ResolveMouseTarget(eventRecord);
+                var offset = MouseTargetResolver.ResolveOffset(chain, mouse.pt.X, mouse.pt.Y);
+
+                // Build a structured event model with absolute and element-relative pointer coordinates.
                 var clickMessage = new UiaEventModel
                 {
-                    Chain = ResolveMouseTarget(eventRecord),
+                    Chain = chain,
                     Event = GetMouseEventName(eventRecord.WParam),
+                    Offset = offset,
                     Timestamp = eventRecord.Timestamp,
                     Type = "Mouse",
                     Value = new

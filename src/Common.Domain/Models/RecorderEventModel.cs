@@ -9,6 +9,7 @@ namespace Common.Domain.Models
     /// </summary>
     public class RecorderEventModel<T>
     {
+        #region *** Properties   ***
         /// <summary>
         /// Gets or sets the UI Automation chain associated with this event.
         /// This provides the hierarchical element path where the event occurred.
@@ -26,6 +27,14 @@ namespace Common.Domain.Models
         public string MachineName { get; set; } = Environment.MachineName;
 
         /// <summary>
+        /// Gets or sets the pointer offset from the target element's top-left corner.
+        /// </summary>
+        /// <remarks>
+        /// The value remains zero on each axis when the producer does not calculate relative geometry.
+        /// </remarks>
+        public RecorderOffsetModel Offset { get; set; } = new();
+
+        /// <summary>
         /// Gets or sets the timestamp (in Unix epoch milliseconds) when the event occurred.
         /// </summary>
         public long Timestamp { get; set; }
@@ -40,5 +49,6 @@ namespace Common.Domain.Models
         /// For example, a pressed key, mouse button, or entered text.
         /// </summary>
         public object Value { get; set; }
+        #endregion
     }
 }
