@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 
-using Common.Domain.Models;
-
 using UiaPeek.Domain.Models;
 
 namespace UiaPeek.Domain.Middlewares
