@@ -158,6 +158,9 @@ namespace UiaPeek.Domain.Middlewares
         // Logger for diagnostics, error reporting, and lifecycle information.
         private readonly ILogger<UiaEventCaptureService> _logger;
 
+        // Resolver that preserves the press-time UIA target for each mouse button.
+        private readonly MouseTargetResolver _mouseTargetResolver;
+
         // Delegate reference for the low-level mouse hook callback.  
         // Must be kept alive to prevent garbage collection while the hook is active.
         private HookProcess _mouseCallback;
@@ -185,6 +188,7 @@ namespace UiaPeek.Domain.Middlewares
             _hub = hub ?? throw new ArgumentNullException(nameof(hub));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+            _mouseTargetResolver = new MouseTargetResolver(repository);
 
             // Create a new CancellationTokenSource to control background worker lifetime.
             // This token will be used to cooperatively stop the event listener when the service shuts down.
@@ -275,6 +279,9 @@ namespace UiaPeek.Domain.Middlewares
                     UnhookWindowsHookEx(mouseHook);
                     _logger.LogInformation("Mouse hook successfully uninstalled.");
                 }
+
+                // Release short-lived input state after the hook lifecycle ends.
+                _mouseTargetResolver.Clear();
             },
             cancellationToken: stoppingToken,
             creationOptions: TaskCreationOptions.LongRunning, // Run as a dedicated thread
@@ -454,8 +461,8 @@ namespace UiaPeek.Domain.Middlewares
                 // Build a structured event model with context (clicks, button up/down, etc.).
                 var clickMessage = new UiaEventModel
                 {
-                    Chain = _repository.Peek(x: mouse.pt.X, y: mouse.pt.Y), // UI element at cursor position.
-                    Event = GetMouseEventName(eventRecord.WParam),          // Resolve readable event name.
+                    Chain = ResolveMouseTarget(eventRecord.WParam, mouse.pt.X, mouse.pt.Y),
+                    Event = GetMouseEventName(eventRecord.WParam),
                     Timestamp = eventRecord.Timestamp,
                     Type = "Mouse",
                     Value = new
@@ -515,6 +522,55 @@ namespace UiaPeek.Domain.Middlewares
             {
                 Value = wheelMessage
             });
+        }
+
+        // Resolves button releases from their press-time targets so transient UI
+        // elements remain stable after the application reacts to the release.
+        private UiaChainModel ResolveMouseTarget(IntPtr message, int x, int y)
+        {
+            switch (message)
+            {
+                case WM_LBUTTONDOWN:
+                    return _mouseTargetResolver.ResolveDown(MouseButton.Left, x, y);
+
+                case WM_MBUTTONDOWN:
+                    return _mouseTargetResolver.ResolveDown(MouseButton.Middle, x, y);
+
+                case WM_RBUTTONDOWN:
+                    return _mouseTargetResolver.ResolveDown(MouseButton.Right, x, y);
+
+                case WM_LBUTTONUP:
+                    return ResolveMouseUp(MouseButton.Left, x, y);
+
+                case WM_MBUTTONUP:
+                    return ResolveMouseUp(MouseButton.Middle, x, y);
+
+                case WM_RBUTTONUP:
+                    return ResolveMouseUp(MouseButton.Right, x, y);
+
+                default:
+                    // Preserve coordinate-based resolution for non-button mouse events.
+                    return _repository.Peek(x, y);
+            }
+        }
+
+        // Resolves a button release and reports when its matching press was absent.
+        private UiaChainModel ResolveMouseUp(MouseButton button, int x, int y)
+        {
+            // Prefer the target captured before the application reacts to the release.
+            var resolution = _mouseTargetResolver.ResolveUp(button, x, y);
+
+            // Surface incomplete pairs without dropping the release event.
+            if (resolution.UsedFallback)
+            {
+                _logger.LogDebug(
+                    "Resolved orphaned {Button} mouse release from coordinates ({X}, {Y}).",
+                    button,
+                    x,
+                    y);
+            }
+
+            return resolution.Chain;
         }
 
         // Converts the current key press described by a low-level keyboard hook struct
