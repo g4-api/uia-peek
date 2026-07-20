@@ -39,6 +39,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <InternalsVisibleTo Include="UiaPeek.Domain.UnitTests" />
+	</ItemGroup>
+
+	<ItemGroup>
 	  <Folder Include="Native\" />
 	</ItemGroup>
 

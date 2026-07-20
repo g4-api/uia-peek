@@ -30,14 +30,12 @@
     const SYNTHETIC_CLICK_WINDOW_MILLISECONDS = 50;
     let lastRealClickTimestamp = 0;
 
-    // Debounced typed-text capture. Typing is recorded from `input` and coalesced per field:
-    // one SendKeys is emitted once typing pauses (or the field loses focus), stamped with the
-    // last input time so it orders at typing time rather than at the later commit. This state is
-    // per frame because the content script runs in an isolated world per frame.
-    const TYPING_DEBOUNCE_MILLISECONDS = 400;
+    // Field-session typed-text capture. Typing is recorded from `input` and coalesced until a
+    // semantic commit boundary such as focus loss, form submission, field change, or page exit.
+    // Ordinary pauses do not split the session. The last input time preserves interaction order,
+    // and this state is per frame because each frame has its own isolated content-script world.
     let pendingTypingElement = null;
     let pendingTypingTimestamp = 0;
-    let typingDebounceTimerId = null;
 
     // Hover-to-record state. A MoveMouseCursor is recorded once the mouse rests over an element
     // for the configured dwell; any movement restarts the timer, and one event is emitted per
@@ -177,7 +175,7 @@
 
         // Return the event with the catalog's frame-switch hint. The worker uses it so only
         // genuine in-frame gestures (clicks/scroll) change the active frame; commit events
-        // (SendKeys from `change`, SubmitForm from `submit`) can fire in a background or mirror
+        // (SendKeys from a field session, SubmitForm from `submit`) can fire in a background or mirror
         // frame and must not trigger a SwitchFrame. Default to a trigger unless the descriptor
         // opts out, so any future event keeps switching unless it declares otherwise.
         return {
@@ -190,9 +188,9 @@
      * Handles any catalogued DOM event by recording and forwarding it.
      *
      * @remarks
-     * Owns the per-event flow but no persistent state. Guards on the settings cache and
-     * the per-event toggle so disabled events never build a payload or cross the
-     * messaging boundary.
+     * Owns the per-event flow and closes a pending field session before form submission.
+     * Guards on the settings cache and per-event toggle so disabled catalog events never
+     * build their own payload or cross the messaging boundary.
      *
      * @param {Event} domEvent The DOM event being recorded.
      * @returns {void}
@@ -201,6 +199,12 @@
         // Do nothing until settings have loaded, so toggles are always respected.
         if (!activeSettings) {
             return;
+        }
+
+        // Commit the active field before its form submission so SendKeys precedes SubmitForm even
+        // when pressing Enter submits without moving focus away from the field.
+        if (domEvent.type === "submit") {
+            sendPendingTyping();
         }
 
         // Find the catalog entry for this DOM event so its toggle key can be checked.
@@ -248,7 +252,7 @@
      *
      * @remarks
      * Owns the messaging boundary for every recorded event (clicks, scroll, submit, and the
-     * debounced SendKeys). Sends this frame's context and the frame-switch hint so the worker
+     * field-session SendKeys). Sends this frame's context and the frame-switch hint so the worker
      * emits a SwitchFrame only when a genuine in-frame gesture moved to a different frame.
      * Ignores "no receiver" rejections that occur while the worker is briefly asleep.
      *
@@ -350,29 +354,23 @@
     }
 
     /**
-     * Emits the pending typed-text SendKeys, if any, and clears the debounce state.
+     * Sends the pending typed-text SendKeys, if any, and closes the field session.
      *
      * @remarks
-     * Owns the typing flush. Called when typing pauses (debounce), when the field loses focus,
-     * or when typing moves to a different field. Skips a field that has since detached so a
-     * stale, unlocatable chain is never sent.
+     * Owns the typing commit. Called only at semantic boundaries: focus loss, form submission,
+     * page exit, or typing moving to a different field. Skips a field that has since detached so
+     * a stale, unlocatable chain is never sent.
      *
      * @returns {void}
      */
-    function flushPendingTyping() {
-        // Cancel any scheduled flush; we are flushing now.
-        if (typingDebounceTimerId !== null) {
-            clearTimeout(typingDebounceTimerId);
-            typingDebounceTimerId = null;
-        }
-
-        // Capture and clear the pending state before building, so re-entry starts clean.
+    function sendPendingTyping() {
+        // Capture and clear the pending state before building so a new field session starts clean.
         const element = pendingTypingElement;
         const typedTimestamp = pendingTypingTimestamp;
         pendingTypingElement = null;
         pendingTypingTimestamp = 0;
 
-        // Nothing to flush, or the field is gone from the document.
+        // Nothing can be committed when there is no session or its field left the document.
         if (!element || !element.isConnected) {
             return;
         }
@@ -384,12 +382,12 @@
     }
 
     /**
-     * Tracks typing into a field and (re)arms the debounce that emits the SendKeys.
+     * Tracks typing as one field session until a semantic commit boundary emits SendKeys.
      *
      * @remarks
-     * Owns the typing capture. Typed text is coalesced per field: repeated keystrokes only
-     * restart the idle timer, and moving to a new field flushes the previous one first so text
-     * is never merged across fields. Respects the `input` toggle and ignores non-text targets.
+     * Owns the typing capture. Repeated inputs update the same session regardless of pauses, and
+     * moving to a new field commits the previous one first so text is never merged across fields.
+     * Respects the `input` toggle and ignores non-text targets.
      *
      * @param {Event} domEvent The input event being recorded.
      * @returns {void}
@@ -419,40 +417,47 @@
             return;
         }
 
-        // Typing moved to a different field: flush the previous field so its text is not merged.
+        // Commit the previous field when typing changes targets so separate fields never merge.
         if (pendingTypingElement && pendingTypingElement !== element) {
-            flushPendingTyping();
+            sendPendingTyping();
         }
 
         // Track the field and the time of this keystroke as the SendKeys ordering timestamp.
         pendingTypingElement = element;
         pendingTypingTimestamp = Date.now();
-
-        // Restart the idle timer so one SendKeys is emitted once typing pauses.
-        if (typingDebounceTimerId !== null) {
-            clearTimeout(typingDebounceTimerId);
-        }
-
-        typingDebounceTimerId = setTimeout(flushPendingTyping, TYPING_DEBOUNCE_MILLISECONDS);
     }
 
     /**
-     * Flushes pending typed text when the tracked field loses focus.
+     * Commits pending typed text when the tracked field loses focus.
      *
      * @remarks
-     * Owns the blur flush. Guarantees a fast type-then-click-away is still recorded, and ordered
-     * before the click that caused the blur, without waiting for the idle debounce.
+     * Owns the blur commit. Guarantees a type-then-click-away interaction is recorded and ordered
+     * before the click that caused the blur.
      *
      * @param {Event} domEvent The focusout event.
      * @returns {void}
      */
     function onTypingBlur(domEvent) {
-        // Flush only when the field losing focus is the one currently being tracked.
+        // Commit only when the field losing focus is the one currently being tracked.
         const element = getEventTarget(domEvent);
 
         if (pendingTypingElement && pendingTypingElement === element) {
-            flushPendingTyping();
+            sendPendingTyping();
         }
+    }
+
+    /**
+     * Commits pending typed text before this frame's document leaves its current page.
+     *
+     * @remarks
+     * Owns the page-exit boundary. The synchronous send request is started while the content
+     * script is still alive so navigation or window closure does not silently discard a focused
+     * field that never emitted focusout.
+     *
+     * @returns {void}
+     */
+    function onTypingPageHide() {
+        sendPendingTyping();
     }
 
     /**
@@ -625,15 +630,20 @@
             });
         });
 
-        // Capture typed text from debounced `input` events rather than `change`, so a SendKeys is
-        // stamped at typing time and orders correctly relative to later clicks.
+        // Track `input` events as a field session so ordinary typing pauses cannot split SendKeys.
         document.addEventListener("input", onTypingInput, {
             capture: true,
             passive: true
         });
 
-        // Flush any pending typed text when a field loses focus (fast type-then-click-away).
+        // Commit pending typed text when a field loses focus (fast type-then-click-away).
         document.addEventListener("focusout", onTypingBlur, {
+            capture: true,
+            passive: true
+        });
+
+        // Commit a still-focused field before navigation or window closure destroys this frame.
+        globalScope.addEventListener("pagehide", onTypingPageHide, {
             capture: true,
             passive: true
         });

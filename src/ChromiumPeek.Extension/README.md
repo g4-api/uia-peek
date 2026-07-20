@@ -65,13 +65,14 @@ Interaction events:
 | `InvokeDoubleClick` | double click | Mouse |
 | `InvokeContextClick` | right-click / context menu | Mouse |
 | `InvokeScroll` | wheel/scroll (direction + notches in `value`) | Mouse |
-| `SendKeys` | field commit (`change`); `value.text` = typed text, password-redactable | Keyboard |
+| `SendKeys` | typed-field commit (focus loss, field change, form submission, or page exit); `value.text` = typed text, password-redactable | Keyboard |
 | `SubmitForm` | form submit (`value` carries `formId`/`formName`) | Form |
 
-> Single-key / live typing (`keydown`/`keyup`, per-keystroke `input`) and **key
+> Single-key actions (`keydown`/`keyup`) and **key
 > combinations** (Ctrl/Alt/Cmd + key, planned as a distinct `SendKeysCombination` event)
 > are **deferred** — placeholders marked `// TODO(key-combination)` that emit nothing for
-> now; typed text is captured as one `SendKeys` on commit.
+> now; trusted `input` events update one field session, which is captured as one `SendKeys`
+> on commit regardless of pauses between keystrokes.
 
 Navigation events (type `Navigation`, top frame, full-page only):
 

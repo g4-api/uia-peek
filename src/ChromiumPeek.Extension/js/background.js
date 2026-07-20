@@ -1003,7 +1003,7 @@ async function onRecordingEventMessage(message, sender) {
     const frameId = sender.frameId || 0;
 
     // Only genuine in-frame user gestures (clicks/scroll) may change the active frame and emit a
-    // SwitchFrame. Commit events like SendKeys (from `change`) and SubmitForm (from `submit`) can
+    // SwitchFrame. Commit events like SendKeys (from a field session) and SubmitForm (from `submit`) can
     // fire in a background or mirror frame the user never interacted with — for example a
     // duplicate search form in a same-origin sub-frame — so they must not trigger a frame switch.
     // Default to true so any event lacking the hint keeps the previous behavior.
