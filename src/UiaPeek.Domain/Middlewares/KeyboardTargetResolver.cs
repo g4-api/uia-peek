@@ -56,8 +56,10 @@ namespace UiaPeek.Domain.Middlewares
         /// </summary>
         /// <param name="identity">The stable physical-key identity shared by Down and Up.</param>
         /// <param name="keyText">The display text resolved for the first press.</param>
+        /// <param name="capturedChain">The pre-press focus snapshot captured before this key's own
+        /// effect changed focus; preferred over a live lookup when it has a usable path.</param>
         /// <returns>The retained keyboard target and its resolution source.</returns>
-        internal KeyboardTargetResolution ResolveDown(KeyboardKeyIdentity identity, string keyText)
+        internal KeyboardTargetResolution ResolveDown(KeyboardKeyIdentity identity, string keyText, UiaChainModel capturedChain = null)
         {
             // Serialize lookup and publication so lifecycle cleanup cannot retain a partially resolved press.
             lock (_syncRoot)
@@ -71,8 +73,17 @@ namespace UiaPeek.Domain.Middlewares
                         KeyboardTargetSource.RepeatedPress);
                 }
 
-                // Resolve focus once for the first Down so later UI changes cannot invalidate the paired Up target.
-                var chain = _repository.Peek();
+                // Prefer the pre-press focus snapshot captured before this key's own effect (for example
+                // Enter closing a dialog); it holds the element that had focus at the physical press. Fall
+                // back to a live focused-element lookup only when no usable snapshot was available.
+                var hasCapturedChain = capturedChain?.Path?.Count > 0;
+                var chain = hasCapturedChain
+                    ? capturedChain
+                    : _repository.Peek();
+                var source = hasCapturedChain
+                    ? KeyboardTargetSource.CapturedSnapshot
+                    : KeyboardTargetSource.FocusedPress;
+
                 var pressState = new KeyboardPressState
                 {
                     Chain = chain,
@@ -82,10 +93,7 @@ namespace UiaPeek.Domain.Middlewares
                 // Publish the complete state only after both target and text have been materialized.
                 _pressedTargets.Add(identity, pressState);
 
-                return new KeyboardTargetResolution(
-                    chain,
-                    keyText,
-                    KeyboardTargetSource.FocusedPress);
+                return new KeyboardTargetResolution(chain, keyText, source);
             }
         }
 
@@ -171,6 +179,7 @@ namespace UiaPeek.Domain.Middlewares
     /// </summary>
     internal enum KeyboardTargetSource
     {
+        CapturedSnapshot,
         FocusedPress,
         OrphanFallback,
         PairedRelease,
