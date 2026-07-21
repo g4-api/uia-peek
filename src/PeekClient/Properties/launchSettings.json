@@ -2,7 +2,7 @@
 	"profiles": {
 		"PeekClient": {
 			"commandName": "Project",
-			"commandLineArgs": "--verbose --uia --no-chromium"
+			"commandLineArgs": "--verbose"
 		}
 	}
 }
