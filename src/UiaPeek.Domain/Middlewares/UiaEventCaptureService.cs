@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -96,6 +95,10 @@ namespace UiaPeek.Domain.Middlewares
         private const int HoverMinimumResolutionIntervalMilliseconds = 50;
         private const int HoverRefreshIntervalMilliseconds = 250;
 
+        // Maximum accepted age (in milliseconds) of the pre-press focus snapshot at key-down stamping.
+        // Focus is stable between navigation keys, so a modest window is safe and tolerant of latency.
+        private const int FocusMaximumAgeMilliseconds = 1500;
+
         // Amount that the mouse wheel reports per notch (used to normalize wheel deltas)
         private const int WHEEL_DELTA = 120;
 
@@ -151,10 +154,6 @@ namespace UiaPeek.Domain.Middlewares
         #endregion
 
         #region *** Fields    ***
-        // Cache of pressed keys: stores the resolved key text on KeyDown so that
-        // the corresponding KeyUp event can reuse the exact same string.
-        private static readonly Dictionary<uint, string> _keysLog = [];
-
         // Shared hub state prevents hover resolution when no recorder client can consume events.
         private readonly RecorderConnectionState _connectionState = RecorderConnectionState.Instance;
 
@@ -167,15 +166,30 @@ namespace UiaPeek.Domain.Middlewares
         // Indicates that a newer pointer observation is waiting for background UIA resolution.
         private int _isHoverPending;
 
+        // Indicates that recent input may have changed focus, so a fresh focus snapshot is due.
+        private int _isFocusPending;
+
+        // Monotonic timestamp of the most recent focus-snapshot resolution.
+        private long _lastFocusResolutionTimestamp;
+
+        // Atomically published pre-press focused-element snapshot consumed by keyboard-down callbacks.
+        private FocusTargetSnapshot _focusSnapshot;
+
         // Delegate reference for the low-level keyboard hook callback.  
         // Must be kept alive to prevent garbage collection while the hook is active.
         private HookProcess _keyboardCallback;
+
+        // Resolver that preserves target identity and key text from first Down through matching Up.
+        private readonly KeyboardTargetResolver _keyboardTargetResolver;
 
         // Logger for diagnostics, error reporting, and lifecycle information.
         private readonly ILogger<UiaEventCaptureService> _logger;
 
         // Monotonic timestamp of the most recent hover-resolution attempt.
         private long _lastHoverResolutionTimestamp;
+
+        // Session generation that owns the currently retained keyboard press state.
+        private long _lastKeyboardSessionGeneration;
 
         // Session generation for which the hover cache was last initialized.
         private long _lastHoverSessionGeneration;
@@ -215,6 +229,7 @@ namespace UiaPeek.Domain.Middlewares
             _hub = hub ?? throw new ArgumentNullException(nameof(hub));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+            _keyboardTargetResolver = new KeyboardTargetResolver(repository);
             _mouseTargetResolver = new MouseTargetResolver(repository);
 
             // Create a new CancellationTokenSource to control background worker lifetime.
@@ -308,6 +323,7 @@ namespace UiaPeek.Domain.Middlewares
                 }
 
                 // Release short-lived input state after the hook lifecycle ends.
+                _keyboardTargetResolver.Clear();
                 _mouseTargetSnapshotStore.Clear();
                 _mouseTargetResolver.Clear();
             },
@@ -332,8 +348,29 @@ namespace UiaPeek.Domain.Middlewares
                 wParam,
                 timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
+            // Stamp the capture-time session state so the background worker can honor it even if the
+            // recorder disconnects (Stop) before this event is drained. This keeps the final key press
+            // from being dropped by the live capture-active gate at processing time.
+            eventRecord.CaptureActiveAtCapture = _connectionState.CaptureActive;
+            eventRecord.SessionGenerationAtCapture = _connectionState.SessionGeneration;
+
+            // Attach the pre-press focus snapshot to key-down events. The hook runs before the key's
+            // message is dispatched, so the snapshot still holds the element that had focus at the
+            // physical press (for example Cancel), even when this key then closes the dialog. Only Down
+            // needs it; Up pairs to the retained Down target.
+            var isKeyDown = wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN;
+
+            if (isKeyDown)
+            {
+                eventRecord.CapturedKeyboardTarget = ResolveFocusSnapshot(eventRecord.SessionGenerationAtCapture);
+            }
+
             // Enqueue the event for processing in the background task.
             _eventsQueue.Enqueue(eventRecord);
+
+            // Mark focus as possibly changed (navigation keys move focus) so the worker refreshes the
+            // snapshot for the next press.
+            SetFocusObservation();
 
             // Signal the background task that a new event is available.
             _signal.Set();
@@ -393,6 +430,9 @@ namespace UiaPeek.Domain.Middlewares
             // Enqueue the event for processing in the background task.
             _eventsQueue.Enqueue(eventRecord);
 
+            // A click moves focus, so refresh the focus snapshot for a subsequent key press.
+            SetFocusObservation();
+
             // Signal the background task that a new event is available.
             _signal.Set();
 
@@ -415,6 +455,123 @@ namespace UiaPeek.Domain.Middlewares
 
             // Wake the worker so it can resolve the newest point without broadcasting a mouse-move event.
             _signal.Set();
+        }
+
+        // Flags that recent input may have moved focus so the worker refreshes the focus snapshot.
+        // Returns immediately when no recorder is connected to avoid needless worker wakeups.
+        private void SetFocusObservation()
+        {
+            // Skip when no active session can consume a snapshot.
+            if (!_connectionState.CaptureActive)
+            {
+                return;
+            }
+
+            // Request one focus refresh on the next worker iteration.
+            Interlocked.Exchange(ref _isFocusPending, 1);
+        }
+
+        // Reads the published pre-press focus snapshot for stamping onto a key-down event. Returns the
+        // focused-element chain when it belongs to the current session, is fresh, and has a usable path;
+        // otherwise null so the resolver falls back to a live focused-element lookup.
+        private UiaChainModel ResolveFocusSnapshot(long sessionGeneration)
+        {
+            // Read the immutable reference once so a concurrent publish cannot change this selection.
+            var snapshot = Volatile.Read(ref _focusSnapshot);
+
+            if (snapshot == null || snapshot.SessionGeneration != sessionGeneration)
+            {
+                return null;
+            }
+
+            // Reject a stale snapshot; focus is stable between navigation keys so a modest age is safe.
+            var ageMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - snapshot.CapturedAtTimestamp;
+
+            if (ageMilliseconds < 0 || ageMilliseconds > FocusMaximumAgeMilliseconds)
+            {
+                return null;
+            }
+
+            // Only a chain with a resolved path is usable; an empty chain would be dropped downstream.
+            var chain = snapshot.Chain;
+
+            return chain?.Path?.Count > 0
+                ? chain
+                : null;
+        }
+
+        // Refreshes the pre-press focus snapshot on the worker when input activity flagged a possible
+        // focus change. Publishing is atomic, so key-down callbacks never read a partial snapshot.
+        private void ResolveFocusTarget()
+        {
+            // Clear session-owned focus state once no recorder can consume it.
+            if (!_connectionState.CaptureActive)
+            {
+                Volatile.Write(ref _focusSnapshot, null);
+                _lastFocusResolutionTimestamp = 0;
+                Interlocked.Exchange(ref _isFocusPending, 0);
+                return;
+            }
+
+            var sessionGeneration = _connectionState.SessionGeneration;
+
+            // Refresh only after input that may have moved focus, throttled by a minimum interval.
+            var hasPending = Interlocked.Exchange(ref _isFocusPending, 0) == 1;
+            var currentTimestamp = Stopwatch.GetTimestamp();
+            var elapsedMilliseconds = GetElapsedMilliseconds(_lastFocusResolutionTimestamp, currentTimestamp);
+            var isThrottled = _lastFocusResolutionTimestamp != 0 &&
+                elapsedMilliseconds < HoverMinimumResolutionIntervalMilliseconds;
+
+            if (!hasPending || isThrottled)
+            {
+                // Preserve the pending flag when throttled so the next iteration performs the refresh.
+                if (hasPending && isThrottled)
+                {
+                    Interlocked.Exchange(ref _isFocusPending, 1);
+                }
+
+                return;
+            }
+
+            UiaChainModel chain;
+
+            try
+            {
+                // Resolve the currently focused element off the hook thread before publishing it.
+                chain = _repository.Peek();
+            }
+            catch (Exception exception)
+            {
+                // Isolate transient provider failures so later focus observations remain serviceable.
+                _lastFocusResolutionTimestamp = Stopwatch.GetTimestamp();
+                _logger.LogDebug(exception, "Skipped focus target resolution.");
+                return;
+            }
+
+            // Record completion time for freshness and throttling.
+            _lastFocusResolutionTimestamp = Stopwatch.GetTimestamp();
+
+            // Discard work completed after the recorder session ended or changed generations.
+            var isSessionCurrent = _connectionState.CaptureActive &&
+                _connectionState.SessionGeneration == sessionGeneration;
+
+            if (!isSessionCurrent)
+            {
+                return;
+            }
+
+            // Publish only a usable chain (with a path) so key-down stamping never yields an empty target.
+            if (!(chain?.Path?.Count > 0))
+            {
+                return;
+            }
+
+            Volatile.Write(ref _focusSnapshot, new FocusTargetSnapshot
+            {
+                CapturedAtTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Chain = chain,
+                SessionGeneration = sessionGeneration
+            });
         }
 
         // Resolves a human-readable string for a given keyboard event.
@@ -465,46 +622,66 @@ namespace UiaPeek.Domain.Middlewares
                 return;
             }
 
-            // Extract keyboard event details from the pointer.
-            var kbd = eventRecord.EventData.Key;
+            // Initialize session ownership before resolving Down so a new generation cannot clear its
+            // fresh state. Uses the capture-time session state stamped on the record, not the live
+            // state, so an event captured during an active session is still broadcast when the session
+            // ends before the worker drains it.
+            if (!InitializeKeyboardTargetState(eventRecord.CaptureActiveAtCapture, eventRecord.SessionGenerationAtCapture))
+            {
+                return;
+            }
 
-            // Variable to hold the resolved key text.
-            string keyText;
+            // Derive one physical identity so target and text state use the same Down-to-Up boundary.
+            var keyboard = eventRecord.EventData.Key;
+            var identity = new KeyboardKeyIdentity(
+                virtualKey: keyboard.vkCode,
+                scanCode: keyboard.scanCode,
+                extended: (keyboard.flags & LLKHF_EXTENDED) != 0);
+            KeyboardTargetResolution targetResolution;
 
-            // Handle key down and key up events separately.
+            // Resolve the first press or consume its retained state according to the native transition.
             if (isKeyDown)
             {
-                // Compute human-readable key text on KeyDown.
-                keyText = ResolveKeyName(kbd);
-
-                // Cache the key text for use when the corresponding KeyUp occurs.
-                _keysLog[kbd.vkCode] = keyText;
+                // Resolve display text once so repeat and release events remain consistent with the first press.
+                var keyText = ResolveKeyName(keyboard);
+                targetResolution = _keyboardTargetResolver.ResolveDown(identity, keyText, eventRecord.CapturedKeyboardTarget);
             }
             else
             {
-                // Attempt to retrieve cached text to ensure consistent KeyUp logging.
-                if (!_keysLog.TryGetValue(kbd.vkCode, out keyText))
-                {
-                    // Fallback: resolve text if no cached entry exists (rare case).
-                    keyText = ResolveKeyName(kbd);
-                }
-
-                // Remove the cached entry to keep memory clean.
-                _keysLog.Remove(kbd.vkCode);
+                // Reuse the first-press state and reserve focused lookup for an unmatched release.
+                targetResolution = _keyboardTargetResolver.ResolveUp(identity);
             }
+
+            // Preserve key-name fallback for sessions that begin after the physical press.
+            var isOrphanedRelease = targetResolution.Source == KeyboardTargetSource.OrphanFallback;
+            var resolvedKeyText = isOrphanedRelease
+                ? ResolveKeyName(keyboard)
+                : targetResolution.KeyText;
+
+            // Report the internal resolution path without extending the recorder event contract.
+            _logger.LogDebug(
+                "Resolved keyboard {Transition} from {Source}; VirtualKey: {VirtualKey}, ScanCode: {ScanCode}, " +
+                "Extended: {Extended}, Locator: {Locator}, PathCount: {PathCount}.",
+                isKeyDown ? "Down" : "Up",
+                targetResolution.Source,
+                identity.VirtualKey,
+                identity.ScanCode,
+                identity.Extended,
+                targetResolution.Chain?.Locator,
+                targetResolution.Chain?.Path?.Count ?? 0);
 
             // Build a structured event model with context.
             var message = new UiaEventModel
             {
-                Chain = _repository.Peek(),
+                Chain = targetResolution.Chain,
                 Event = isKeyDown ? "Key Down" : "Key Up",
                 Timestamp = eventRecord.Timestamp,
                 Type = "Keyboard",
                 Value = new
                 {
-                    ScanCode = kbd.scanCode,
-                    VirtualKey = kbd.vkCode,
-                    Key = keyText
+                    ScanCode = keyboard.scanCode,
+                    VirtualKey = keyboard.vkCode,
+                    Key = resolvedKeyText
                 }
             };
 
@@ -906,6 +1083,33 @@ namespace UiaPeek.Domain.Middlewares
             return message == WM_LBUTTONDOWN || message == WM_MBUTTONDOWN || message == WM_RBUTTONDOWN;
         }
 
+        // Initializes keyboard state for the active recorder generation and rejects idle input, using
+        // the session state captured when the event was recorded rather than the live state. The worker
+        // owns generation transitions so retained presses never cross connection lifecycles.
+        private bool InitializeKeyboardTargetState(bool captureActiveAtCapture, long sessionGenerationAtCapture)
+        {
+            // Skip events captured while no recorder was connected; there is nothing to broadcast to and
+            // no session state to retain. Using the capture-time flag (not the live one) keeps an event
+            // captured during an active session broadcastable even after the session ends.
+            if (!captureActiveAtCapture)
+            {
+                _keyboardTargetResolver.Clear();
+                _lastKeyboardSessionGeneration = 0;
+                return false;
+            }
+
+            // Reset state before the first keyboard event of each newly connected recorder generation.
+            // Using the capture-time generation keeps a Down and its paired Up (same generation) from
+            // being split by a live-state change between them.
+            if (_lastKeyboardSessionGeneration != sessionGenerationAtCapture)
+            {
+                _keyboardTargetResolver.Clear();
+                _lastKeyboardSessionGeneration = sessionGenerationAtCapture;
+            }
+
+            return true;
+        }
+
         // Attempts to install a low-level Windows hook (e.g., keyboard or mouse).
         // Tries with the current module handle first, then falls back to using <c>IntPtr.Zero</c>.
         private static IntPtr InitializeWindowsHook(int idHook, HookProcess process, out int lastError)
@@ -944,6 +1148,14 @@ namespace UiaPeek.Domain.Middlewares
             // Clear session-owned state once the final recorder client disconnects.
             if (!_connectionState.CaptureActive)
             {
+                // Clear keyboard presses independently because they can precede hover-session initialization.
+                if (_lastKeyboardSessionGeneration != 0)
+                {
+                    _keyboardTargetResolver.Clear();
+                    _lastKeyboardSessionGeneration = 0;
+                }
+
+                // Clear pointer-owned state after the active hover generation ends.
                 if (_lastHoverSessionGeneration != 0)
                 {
                     _mouseTargetSnapshotStore.Clear();
@@ -1151,6 +1363,10 @@ namespace UiaPeek.Domain.Middlewares
 
                     // Resolve at most one coalesced hover observation after all real input events are serviced.
                     ResolveHoverTarget();
+
+                    // Refresh the pre-press focus snapshot so the next key-down is attributed to the
+                    // element that had focus before the key's own effect changes it.
+                    ResolveFocusTarget();
                 }
             }
 
@@ -1190,6 +1406,20 @@ namespace UiaPeek.Domain.Middlewares
 
         #region *** Nested Types ***
         private enum EventType : byte { Mouse = 1, Keyboard = 2 }
+
+        // Immutable pre-press focus snapshot published for key-down stamping. Instances are published
+        // once and then treated as read-only so the hook can retain the chain without invoking UIA.
+        private sealed class FocusTargetSnapshot
+        {
+            // The wall-clock millisecond timestamp recorded when the focused chain was materialized.
+            internal long CapturedAtTimestamp { get; init; }
+
+            // The materialized focused-element chain observed before the next key press.
+            internal UiaChainModel Chain { get; init; }
+
+            // The recorder-session generation that owned the observation.
+            internal long SessionGeneration { get; init; }
+        }
 
         [StructLayout(LayoutKind.Explicit)]
         private struct EventPayload
@@ -1335,6 +1565,25 @@ namespace UiaPeek.Domain.Middlewares
             /// The pre-dispatch mouse target selected by the hook, or null when unavailable.
             /// </summary>
             public UiaChainModel CapturedMouseTarget;
+
+            /// <summary>
+            /// The pre-press focused-element target stamped on a key-down before the key's own effect
+            /// (for example Enter closing a dialog) can change focus, or null when unavailable.
+            /// </summary>
+            public UiaChainModel CapturedKeyboardTarget;
+
+            /// <summary>
+            /// Whether a recorder was connected (capture active) at the moment this event was captured.
+            /// The worker honors this instead of the live state so a trailing event is not dropped when
+            /// the session ends before the event is drained.
+            /// </summary>
+            public bool CaptureActiveAtCapture;
+
+            /// <summary>
+            /// The recorder session generation at the moment this event was captured, used to keep a
+            /// Down and its paired Up bound to the same session across a live-state change.
+            /// </summary>
+            public long SessionGenerationAtCapture;
 
             /// <summary>
             /// The raw data associated with the event.
