@@ -6,8 +6,8 @@ using UiaPeek.Domain.Models;
 namespace UiaPeek.Domain.Middlewares
 {
     /// <summary>
-    /// Resolves focused UI Automation targets for keyboard transitions and retains
-    /// the first press target until the matching physical key is released.
+    /// Retains pre-dispatch UI Automation targets for keyboard transitions until
+    /// each matching physical key is released.
     /// </summary>
     /// <remarks>
     /// Key actions can close a dialog or transfer focus before Key Up is processed.
@@ -25,7 +25,7 @@ namespace UiaPeek.Domain.Middlewares
         /// <summary>
         /// Initializes a new instance of the <see cref="KeyboardTargetResolver"/> class.
         /// </summary>
-        /// <param name="repository">The repository used for focused-element UIA lookups.</param>
+        /// <param name="repository">The repository used only when a release has no retained press.</param>
         internal KeyboardTargetResolver(IUiaPeekRepository repository)
         {
             // Require the focused-element provider before accepting keyboard state.
@@ -33,7 +33,7 @@ namespace UiaPeek.Domain.Middlewares
                 argument: repository,
                 paramName: nameof(repository));
 
-            // Retain the provider used only for first presses and orphaned releases.
+            // Retain the provider only for releases captured after their physical press.
             _repository = repository;
         }
         #endregion
@@ -57,9 +57,13 @@ namespace UiaPeek.Domain.Middlewares
         /// <param name="identity">The stable physical-key identity shared by Down and Up.</param>
         /// <param name="keyText">The display text resolved for the first press.</param>
         /// <param name="capturedChain">The pre-press focus snapshot captured before this key's own
-        /// effect changed focus; preferred over a live lookup when it has a usable path.</param>
+        /// effect changed focus. A missing snapshot remains unresolved because a later focused lookup
+        /// can observe the element that received the key's effect instead of its input.</param>
         /// <returns>The retained keyboard target and its resolution source.</returns>
-        internal KeyboardTargetResolution ResolveDown(KeyboardKeyIdentity identity, string keyText, UiaChainModel capturedChain = null)
+        internal KeyboardTargetResolution ResolveDown(
+            KeyboardKeyIdentity identity,
+            string keyText,
+            UiaChainModel capturedChain)
         {
             // Serialize lookup and publication so lifecycle cleanup cannot retain a partially resolved press.
             lock (_syncRoot)
@@ -73,16 +77,14 @@ namespace UiaPeek.Domain.Middlewares
                         KeyboardTargetSource.RepeatedPress);
                 }
 
-                // Prefer the pre-press focus snapshot captured before this key's own effect (for example
-                // Enter closing a dialog); it holds the element that had focus at the physical press. Fall
-                // back to a live focused-element lookup only when no usable snapshot was available.
+                // Select only the pre-dispatch focus snapshot so navigation cannot bind the press to its destination.
                 var hasCapturedChain = capturedChain?.Path?.Count > 0;
                 var chain = hasCapturedChain
                     ? capturedChain
-                    : _repository.Peek();
+                    : null;
                 var source = hasCapturedChain
                     ? KeyboardTargetSource.CapturedSnapshot
-                    : KeyboardTargetSource.FocusedPress;
+                    : KeyboardTargetSource.MissingSnapshot;
 
                 var pressState = new KeyboardPressState
                 {
@@ -180,7 +182,7 @@ namespace UiaPeek.Domain.Middlewares
     internal enum KeyboardTargetSource
     {
         CapturedSnapshot,
-        FocusedPress,
+        MissingSnapshot,
         OrphanFallback,
         PairedRelease,
         RepeatedPress

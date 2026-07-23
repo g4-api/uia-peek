@@ -13,6 +13,8 @@ using System.Threading.Tasks;
 using UiaPeek.Domain.Hubs;
 using UiaPeek.Domain.Models;
 
+using UIAutomationClient;
+
 namespace UiaPeek.Domain.Middlewares
 {
     /// <summary>
@@ -95,10 +97,6 @@ namespace UiaPeek.Domain.Middlewares
         private const int HoverMinimumResolutionIntervalMilliseconds = 50;
         private const int HoverRefreshIntervalMilliseconds = 250;
 
-        // Maximum accepted age (in milliseconds) of the pre-press focus snapshot at key-down stamping.
-        // Focus is stable between navigation keys, so a modest window is safe and tolerant of latency.
-        private const int FocusMaximumAgeMilliseconds = 1500;
-
         // Amount that the mouse wheel reports per notch (used to normalize wheel deltas)
         private const int WHEEL_DELTA = 120;
 
@@ -169,11 +167,14 @@ namespace UiaPeek.Domain.Middlewares
         // Indicates that recent input may have changed focus, so a fresh focus snapshot is due.
         private int _isFocusPending;
 
-        // Monotonic timestamp of the most recent focus-snapshot resolution.
-        private long _lastFocusResolutionTimestamp;
+        // Monotonic generation that prevents an older UIA lookup from overwriting a newer focus observation.
+        private long _focusObservationGeneration;
 
-        // Atomically published pre-press focused-element snapshot consumed by keyboard-down callbacks.
-        private FocusTargetSnapshot _focusSnapshot;
+        // Receives UI Automation focus notifications and invalidates obsolete pre-key targets.
+        private FocusChangedEventHandler _focusChangedEventHandler;
+
+        // Owns the UI Automation subscription for the service lifetime.
+        private IUIAutomation _focusObserverAutomation;
 
         // Delegate reference for the low-level keyboard hook callback.  
         // Must be kept alive to prevent garbage collection while the hook is active.
@@ -181,6 +182,9 @@ namespace UiaPeek.Domain.Middlewares
 
         // Resolver that preserves target identity and key text from first Down through matching Up.
         private readonly KeyboardTargetResolver _keyboardTargetResolver;
+
+        // Atomically publishes session-owned focus chains to the low-level keyboard hook.
+        private readonly KeyboardFocusSnapshotStore _keyboardFocusSnapshotStore = new();
 
         // Logger for diagnostics, error reporting, and lifecycle information.
         private readonly ILogger<UiaEventCaptureService> _logger;
@@ -190,6 +194,9 @@ namespace UiaPeek.Domain.Middlewares
 
         // Session generation that owns the currently retained keyboard press state.
         private long _lastKeyboardSessionGeneration;
+
+        // Session generation for which the focus cache was last initialized.
+        private long _lastFocusSessionGeneration;
 
         // Session generation for which the hover cache was last initialized.
         private long _lastHoverSessionGeneration;
@@ -287,6 +294,9 @@ namespace UiaPeek.Domain.Middlewares
                     return;
                 }
 
+                // Subscribe to real focus transitions so elapsed time never invalidates a stable keyboard target.
+                StartFocusMonitoring();
+
                 _logger.LogInformation("Input monitoring service is running.");
 
                 // Ensure that when the service is stopped, a WM_QUIT message
@@ -308,6 +318,9 @@ namespace UiaPeek.Domain.Middlewares
                     DispatchMessage(ref msg);
                 }
 
+                // Remove the focus subscription before releasing hook-owned state so callbacks cannot republish it.
+                StopFocusMonitoring();
+
                 // Clean up the keyboard hook if it was installed.
                 if (keyboardHook != IntPtr.Zero)
                 {
@@ -323,6 +336,7 @@ namespace UiaPeek.Domain.Middlewares
                 }
 
                 // Release short-lived input state after the hook lifecycle ends.
+                _keyboardFocusSnapshotStore.Clear();
                 _keyboardTargetResolver.Clear();
                 _mouseTargetSnapshotStore.Clear();
                 _mouseTargetResolver.Clear();
@@ -362,7 +376,8 @@ namespace UiaPeek.Domain.Middlewares
 
             if (isKeyDown)
             {
-                eventRecord.CapturedKeyboardTarget = ResolveFocusSnapshot(eventRecord.SessionGenerationAtCapture);
+                eventRecord.CapturedKeyboardTarget = _keyboardFocusSnapshotStore.Resolve(
+                    eventRecord.SessionGenerationAtCapture);
             }
 
             // Enqueue the event for processing in the background task.
@@ -457,6 +472,73 @@ namespace UiaPeek.Domain.Middlewares
             _signal.Set();
         }
 
+        // Registers one process-wide UI Automation focus observer for the service lifetime. Registration
+        // failure leaves input hooks operational and relies on their existing post-input refresh signals.
+        private void StartFocusMonitoring()
+        {
+            // Materialize the COM client and managed callback before registration so both remain strongly referenced.
+            var automation = new CUIAutomation8();
+            var handler = new FocusChangedEventHandler(SetFocusChangedObservation);
+
+            try
+            {
+                // Subscribe without a cache request because the event worker resolves the complete chain separately.
+                automation.AddFocusChangedEventHandler(cacheRequest: null, handler);
+
+                // Publish ownership only after successful registration so shutdown removes a real subscription.
+                _focusObserverAutomation = automation;
+                _focusChangedEventHandler = handler;
+            }
+            catch (Exception exception)
+            {
+                // Release the failed COM registration client while preserving keyboard and mouse recording.
+                if (Marshal.IsComObject(automation))
+                {
+                    Marshal.FinalReleaseComObject(automation);
+                }
+
+                _logger.LogWarning(exception, "UI Automation focus monitoring failed to start.");
+            }
+        }
+
+        // Removes the UI Automation focus observer before hook cleanup. The method clears owned references first
+        // so a reentrant or late callback cannot keep the subscription lifecycle reachable through this service.
+        private void StopFocusMonitoring()
+        {
+            // Detach service ownership before invoking COM cleanup so repeated shutdown paths remain idempotent.
+            var automation = _focusObserverAutomation;
+            var handler = _focusChangedEventHandler;
+            _focusObserverAutomation = null;
+            _focusChangedEventHandler = null;
+
+            if (automation == null)
+            {
+                return;
+            }
+
+            try
+            {
+                // Remove the exact handler instance registered at startup so focus callbacks stop before state cleanup.
+                if (handler != null)
+                {
+                    automation.RemoveFocusChangedEventHandler(handler);
+                }
+            }
+            catch (Exception exception)
+            {
+                // Keep shutdown progressing when the UI Automation provider has already disconnected.
+                _logger.LogDebug(exception, "UI Automation focus monitoring failed to stop cleanly.");
+            }
+            finally
+            {
+                // Release the COM client after removal so the service owns no focus-monitoring resources.
+                if (Marshal.IsComObject(automation))
+                {
+                    Marshal.FinalReleaseComObject(automation);
+                }
+            }
+        }
+
         // Flags that recent input may have moved focus so the worker refreshes the focus snapshot.
         // Returns immediately when no recorder is connected to avoid needless worker wakeups.
         private void SetFocusObservation()
@@ -468,36 +550,28 @@ namespace UiaPeek.Domain.Middlewares
             }
 
             // Request one focus refresh on the next worker iteration.
+            Interlocked.Increment(ref _focusObservationGeneration);
             Interlocked.Exchange(ref _isFocusPending, 1);
+
+            // Wake the worker so focus changes without an input event are published before the next key.
+            _signal.Set();
         }
 
-        // Reads the published pre-press focus snapshot for stamping onto a key-down event. Returns the
-        // focused-element chain when it belongs to the current session, is fresh, and has a usable path;
-        // otherwise null so the resolver falls back to a live focused-element lookup.
-        private UiaChainModel ResolveFocusSnapshot(long sessionGeneration)
+        // Invalidates the last publication after UI Automation reports a real focus transition, then
+        // schedules resolution of the new target outside the COM callback and low-level hook threads.
+        private void SetFocusChangedObservation()
         {
-            // Read the immutable reference once so a concurrent publish cannot change this selection.
-            var snapshot = Volatile.Read(ref _focusSnapshot);
-
-            if (snapshot == null || snapshot.SessionGeneration != sessionGeneration)
+            // Ignore global focus activity while no recorder session can consume the resulting chain.
+            if (!_connectionState.CaptureActive)
             {
-                return null;
+                return;
             }
 
-            // Reject a stale snapshot; focus is stable between navigation keys so a modest age is safe.
-            var ageMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - snapshot.CapturedAtTimestamp;
+            // Remove the old target before requesting replacement so rapid keys never reuse known-obsolete focus.
+            _keyboardFocusSnapshotStore.Clear();
 
-            if (ageMilliseconds < 0 || ageMilliseconds > FocusMaximumAgeMilliseconds)
-            {
-                return null;
-            }
-
-            // Only a chain with a resolved path is usable; an empty chain would be dropped downstream.
-            var chain = snapshot.Chain;
-
-            return chain?.Path?.Count > 0
-                ? chain
-                : null;
+            // Schedule the current focus lookup on the event worker so the COM notification returns promptly.
+            SetFocusObservation();
         }
 
         // Refreshes the pre-press focus snapshot on the worker when input activity flagged a possible
@@ -507,32 +581,34 @@ namespace UiaPeek.Domain.Middlewares
             // Clear session-owned focus state once no recorder can consume it.
             if (!_connectionState.CaptureActive)
             {
-                Volatile.Write(ref _focusSnapshot, null);
-                _lastFocusResolutionTimestamp = 0;
+                _keyboardFocusSnapshotStore.Clear();
+                _lastFocusSessionGeneration = 0;
                 Interlocked.Exchange(ref _isFocusPending, 0);
                 return;
             }
 
+            // Initialize each recorder generation with an immediate focus lookup so its first key has a target.
             var sessionGeneration = _connectionState.SessionGeneration;
+            var isNewSession = _lastFocusSessionGeneration != sessionGeneration;
 
-            // Refresh only after input that may have moved focus, throttled by a minimum interval.
-            var hasPending = Interlocked.Exchange(ref _isFocusPending, 0) == 1;
-            var currentTimestamp = Stopwatch.GetTimestamp();
-            var elapsedMilliseconds = GetElapsedMilliseconds(_lastFocusResolutionTimestamp, currentTimestamp);
-            var isThrottled = _lastFocusResolutionTimestamp != 0 &&
-                elapsedMilliseconds < HoverMinimumResolutionIntervalMilliseconds;
-
-            if (!hasPending || isThrottled)
+            if (isNewSession)
             {
-                // Preserve the pending flag when throttled so the next iteration performs the refresh.
-                if (hasPending && isThrottled)
-                {
-                    Interlocked.Exchange(ref _isFocusPending, 1);
-                }
+                _keyboardFocusSnapshotStore.Clear();
+                _lastFocusSessionGeneration = sessionGeneration;
+                Interlocked.Increment(ref _focusObservationGeneration);
+                Interlocked.Exchange(ref _isFocusPending, 1);
+            }
 
+            // Refresh only after startup, input, or an actual UI Automation focus notification.
+            var hasPending = Interlocked.Exchange(ref _isFocusPending, 0) == 1;
+
+            if (!hasPending)
+            {
                 return;
             }
 
+            // Stamp the observation generation before UIA work so newer focus signals can invalidate this result.
+            var focusObservationGeneration = Volatile.Read(ref _focusObservationGeneration);
             UiaChainModel chain;
 
             try
@@ -543,19 +619,18 @@ namespace UiaPeek.Domain.Middlewares
             catch (Exception exception)
             {
                 // Isolate transient provider failures so later focus observations remain serviceable.
-                _lastFocusResolutionTimestamp = Stopwatch.GetTimestamp();
+                _keyboardFocusSnapshotStore.Clear();
                 _logger.LogDebug(exception, "Skipped focus target resolution.");
                 return;
             }
 
-            // Record completion time for freshness and throttling.
-            _lastFocusResolutionTimestamp = Stopwatch.GetTimestamp();
-
             // Discard work completed after the recorder session ended or changed generations.
             var isSessionCurrent = _connectionState.CaptureActive &&
                 _connectionState.SessionGeneration == sessionGeneration;
+            var isObservationCurrent =
+                Volatile.Read(ref _focusObservationGeneration) == focusObservationGeneration;
 
-            if (!isSessionCurrent)
+            if (!isSessionCurrent || !isObservationCurrent)
             {
                 return;
             }
@@ -563,15 +638,12 @@ namespace UiaPeek.Domain.Middlewares
             // Publish only a usable chain (with a path) so key-down stamping never yields an empty target.
             if (!(chain?.Path?.Count > 0))
             {
+                _keyboardFocusSnapshotStore.Clear();
                 return;
             }
 
-            Volatile.Write(ref _focusSnapshot, new FocusTargetSnapshot
-            {
-                CapturedAtTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                Chain = chain,
-                SessionGeneration = sessionGeneration
-            });
+            // Publish without a wall-clock lifetime because validity ends on focus or session transitions.
+            _keyboardFocusSnapshotStore.Set(chain, sessionGeneration);
         }
 
         // Resolves a human-readable string for a given keyboard event.
@@ -650,6 +722,17 @@ namespace UiaPeek.Domain.Middlewares
             {
                 // Reuse the first-press state and reserve focused lookup for an unmatched release.
                 targetResolution = _keyboardTargetResolver.ResolveUp(identity);
+            }
+
+            // Report missing pre-dispatch focus explicitly instead of silently assigning a post-key destination.
+            if (targetResolution.Source == KeyboardTargetSource.MissingSnapshot)
+            {
+                _logger.LogWarning(
+                    "Recorded keyboard Down without a pre-dispatch focus snapshot; " +
+                    "VirtualKey: {VirtualKey}, ScanCode: {ScanCode}, Extended: {Extended}.",
+                    identity.VirtualKey,
+                    identity.ScanCode,
+                    identity.Extended);
             }
 
             // Preserve key-name fallback for sessions that begin after the physical press.
@@ -1407,18 +1490,28 @@ namespace UiaPeek.Domain.Middlewares
         #region *** Nested Types ***
         private enum EventType : byte { Mouse = 1, Keyboard = 2 }
 
-        // Immutable pre-press focus snapshot published for key-down stamping. Instances are published
-        // once and then treated as read-only so the hook can retain the chain without invoking UIA.
-        private sealed class FocusTargetSnapshot
+        // Bridges UI Automation focus notifications into the worker-owned focus-resolution pipeline.
+        // The callback performs no UIA traversal and therefore returns without blocking provider event delivery.
+        private sealed class FocusChangedEventHandler : IUIAutomationFocusChangedEventHandler
         {
-            // The wall-clock millisecond timestamp recorded when the focused chain was materialized.
-            internal long CapturedAtTimestamp { get; init; }
+            private readonly Action _onFocusChanged;
 
-            // The materialized focused-element chain observed before the next key press.
-            internal UiaChainModel Chain { get; init; }
+            internal FocusChangedEventHandler(Action onFocusChanged)
+            {
+                // Require the service callback before exposing the handler to COM event delivery.
+                ArgumentNullException.ThrowIfNull(
+                    argument: onFocusChanged,
+                    paramName: nameof(onFocusChanged));
 
-            // The recorder-session generation that owned the observation.
-            internal long SessionGeneration { get; init; }
+                _onFocusChanged = onFocusChanged;
+            }
+
+            /// <inheritdoc />
+            public void HandleFocusChangedEvent(IUIAutomationElement sender)
+            {
+                // Forward only the transition signal because the event worker owns chain materialization and failures.
+                _onFocusChanged();
+            }
         }
 
         [StructLayout(LayoutKind.Explicit)]
