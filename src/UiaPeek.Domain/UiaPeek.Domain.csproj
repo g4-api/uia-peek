@@ -35,15 +35,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\Common.Domain\Common.Domain.csproj" />
+		<ProjectReference Include="..\Common.Domain\Common.Domain.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <InternalsVisibleTo Include="UiaPeek.Domain.UnitTests" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Folder Include="Native\" />
+		<InternalsVisibleTo Include="UiaPeek.Domain.UnitTests" />
 	</ItemGroup>
 
 </Project>
