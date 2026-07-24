@@ -16,16 +16,16 @@
 			 The latest known version without this issue is version 5.0.17. 
 			 https://github.com/mbdavid/LiteDB/issues/1976#issuecomment-1968006775 -->
 		<PackageReference Include="G4.Converters" Version="2026.7.11.70" />
-		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Ini" Version="10.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Xml" Version="10.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Primitives" Version="10.0.9" />
+		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Ini" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Xml" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Primitives" Version="10.0.10" />
 	</ItemGroup>
 
 </Project>
